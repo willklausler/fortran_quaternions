@@ -1,0 +1,291 @@
+! SPDX-License-Identifier: MIT
+#:include "common.fypp"
+$:HEADER()
+#:set FUNCS_C = ['sqrt', 'exp', 'log', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh']
+program test_quaternions
+  !! Unit tests for every public procedure, for each kind.
+  !! Avoids NaN/Inf arithmetic so it runs under floating-point trapping.
+  use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int8, int16, int32, int64
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+  use quaternions
+  implicit none
+  integer :: ncheck = 0, nfail = 0
+
+  call check(quaternions_has_qp .eqv. (QUATERNIONS_QP == 1), 'quaternions_has_qp')
+#:for s, k, g in KINDS
+$:BEGIN(g)
+  call test_${s}$()
+$:END(g)
+#:endfor
+  print '(i0, a, i0, a)', ncheck - nfail, ' of ', ncheck, ' checks passed'
+  if (nfail > 0) error stop 1
+
+contains
+
+subroutine check(cond, name)
+  logical, intent(in) :: cond
+  character(*), intent(in) :: name
+  ncheck = ncheck + 1
+  if (.not. cond) then
+    nfail = nfail + 1
+    print '(a)', 'FAIL: ' // name
+  end if
+end subroutine check
+
+#:for s, k, g in KINDS
+#:set Q = 'quat_' + s
+$:BEGIN(g)
+logical function vclose_${s}$(a, b, tol) result(c)
+  !! Arrays equal within tol, relative to max(1, |b|)
+  real(${k}$), intent(in) :: a(:), b(:), tol
+  c = all(abs(a - b) <= tol*max(1._${k}$, maxval(abs(b))))
+end function vclose_${s}$
+
+logical function all_nan_${s}$(q) result(c)
+  type(${Q}$), intent(in) :: q
+  c = ieee_is_nan(q%w) .and. ieee_is_nan(q%x) .and. ieee_is_nan(q%y) .and. ieee_is_nan(q%z)
+end function all_nan_${s}$
+
+subroutine test_${s}$()
+  real(${k}$), parameter :: pi = acos(-1._${k}$), eps = epsilon(1._${k}$)
+  real(${k}$), parameter :: tol = 64*eps, ltol = sqrt(eps)
+  type(${Q}$), parameter :: one = ${Q}$(1), i = ${Q}$(0, 1), j = ${Q}$(0, 0, 1), k = ${Q}$(0, 0, 0, 1)
+  type(${Q}$) :: p, q, r, qs(1000)
+  real(${k}$) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t
+  complex(${k}$) :: z
+  character(200) :: buf
+  integer :: n, u, ios
+  character(*), parameter :: pre = '${s}$: '
+
+  ! Construction ------------------------------------------------------
+  p = ${Q}$(1, 2, 3, 4)
+  call check(p%w == 1 .and. p%x == 2 .and. p%y == 3 .and. p%z == 4, pre // 'structure constructor')
+  call check(${Q}$([1._${k}$, 2._${k}$, 3._${k}$, 4._${k}$]) == p, pre // 'array constructor')
+  call check(${Q}$(2.5_${k}$) == ${Q}$(2.5_${k}$, 0, 0, 0), pre // 'omitted parts are zero')
+  call check(${Q}$('1 + 2i + 3j + 4k') == p, pre // 'parse spaced')
+  call check(${Q}$('1+2i+3j+4k') == p, pre // 'parse compact')
+  call check(${Q}$('4k + 3j + 1 + 2i') == p, pre // 'parse any order')
+  call check(${Q}$('-1.5e+2 - 2.5E-1i + j - k') == ${Q}$(-150, -0.25_${k}$, 1, -1), pre // 'parse exponents, implicit 1')
+  call check(${Q}$('  -3  ') == ${Q}$(-3), pre // 'parse real only')
+  call check(${Q}$('.5i') == ${Q}$(0, 0.5_${k}$), pre // 'parse leading dot')
+  call check(${Q}$('1d2 + 2I') == ${Q}$(100, 2), pre // 'parse d exponent, capital unit')
+  call check(all_nan_${s}$(${Q}$('1 2')), pre // 'parse rejects missing sign')
+  call check(all_nan_${s}$(${Q}$('2 i')), pre // 'parse rejects blank before unit')
+  call check(all_nan_${s}$(${Q}$('1 +')), pre // 'parse rejects dangling sign')
+  call check(all_nan_${s}$(${Q}$('x')), pre // 'parse rejects garbage')
+  call check(all_nan_${s}$(${Q}$('')), pre // 'parse rejects empty')
+#:for s2, k2, g2 in KINDS
+#:if s2 != s
+$:BEGIN(g2)
+  call check(${Q}$(quat_${s2}$(1.5_${k2}$, -2, 0.25_${k2}$, 8)) == ${Q}$(1.5_${k}$, -2, 0.25_${k}$, 8), &
+    & pre // 'convert from ${s2}$')
+$:END(g2)
+#:endif
+#:endfor
+
+  ! Assignment ----------------------------------------------------------
+#:for t, ik in INTS
+  q = 3_${ik}$
+  call check(q == ${Q}$(3), pre // 'assign ${ik}$')
+#:endfor
+  q = 2.5_${k}$
+  call check(q == ${Q}$(2.5_${k}$), pre // 'assign real')
+
+  ! Arithmetic ----------------------------------------------------------
+  call check(i*j == k .and. j*k == i .and. k*i == j, pre // 'ij = k, jk = i, ki = j')
+  call check(i*i == -one .and. j*j == -one .and. k*k == -one .and. i*j*k == -one, pre // 'i^2 = j^2 = k^2 = ijk = -1')
+  call check(j*i == -k, pre // 'ji = -k')
+  q = ${Q}$(5, -6, 7, 8)
+  call check(p + q == ${Q}$(6, -4, 10, 12) .and. p - q == ${Q}$(-4, 8, -4, -4), pre // 'add, subtract')
+  call check(-p == ${Q}$(-1, -2, -3, -4) .and. +p == p, pre // 'unary minus, plus')
+  call check(p*q == ${Q}$(-36, 0, -18, 60), pre // 'Hamilton product')
+#:for t, ik in INTS + [('r', k)]
+#:set two = '2_' + ik if t != 'r' else '2._' + k
+  call check(p + ${two}$ == ${Q}$(3, 2, 3, 4) .and. ${two}$ + p == ${Q}$(3, 2, 3, 4), pre // 'add ${ik}$')
+  call check(p - ${two}$ == ${Q}$(-1, 2, 3, 4) .and. ${two}$ - p == ${Q}$(1, -2, -3, -4), pre // 'subtract ${ik}$')
+  call check(p*${two}$ == ${Q}$(2, 4, 6, 8) .and. ${two}$*p == ${Q}$(2, 4, 6, 8), pre // 'multiply ${ik}$')
+  call check(p/${two}$ == ${Q}$(0.5_${k}$, 1, 1.5_${k}$, 2) .and. ${two}$/${Q}$(4) == ${Q}$(0.5_${k}$), pre // 'divide ${ik}$')
+  call check(${Q}$(2) == ${two}$ .and. ${two}$ == ${Q}$(2) .and. .not. (p == ${two}$), pre // 'equal ${ik}$')
+  call check(p /= ${two}$ .and. ${two}$ /= p .and. .not. (${Q}$(2) /= ${two}$), pre // 'not equal ${ik}$')
+#:if t == 'r'
+  call check(is_close(p**${two}$, p*p, tol), pre // 'power ${ik}$')
+#:else
+  call check(p**${two}$ == p*p, pre // 'power ${ik}$')
+#:endif
+  call check(is_close(${two}$**q, exp(log(${two}$*one)*q), tol), pre // '${ik}$ ** quaternion')
+#:endfor
+
+  call random_number(qs(1:3))
+  qs(1:3) = 2*qs(1:3) - 1
+  p = qs(1); q = qs(2); r = qs(3)
+  call check(is_close((p*q)*r, p*(q*r), tol), pre // 'associative')
+  call check(is_close(p*inv(p), one, tol) .and. is_close(inv(p)*p, one, tol), pre // 'inverse')
+  call check(is_close(p/q*q, p, tol) .and. is_close(p/q, p*inv(q), tol), pre // 'right division')
+  call check(is_close(conjg(p*q), conjg(q)*conjg(p), tol), pre // 'conjugate of product')
+  call check(abs(abs(p*q) - abs(p)*abs(q)) <= tol*abs(p)*abs(q), pre // 'norm is multiplicative')
+  call check(abs(dot_product(p, p) - abs(p)**2) <= tol*abs(p)**2, pre // 'dot_product')
+  call check(${Q}$(1, 1)**2 == 2*i, pre // '(1+i)**2 exact')
+  call check(p**0 == one .and. is_close(p**3, p*p*p, tol), pre // 'power 0, 3')
+  call check(is_close(p**(-1), inv(p), tol) .and. is_close(p**(-2_int64), inv(p*p), tol), pre // 'negative power')
+  call check(is_close((p**0.5_${k}$)**2, p, tol) .and. is_close(p**1._${k}$, p, tol), pre // 'real power')
+  call check(is_close(p**${Q}$(2), p*p, 4*tol), pre // 'quaternion power')
+  big = 4*sqrt(huge(1._${k}$))
+  call check(is_close(inv(${Q}$(big, big)), ${Q}$(1/(2*big), -1/(2*big)), tol), pre // 'inverse without overflow')
+
+  ! Comparison --------------------------------------------------------
+  call check(${Q}$(1 + eps) /= one .and. .not. (${Q}$(1 + eps) == one), pre // '== is exact')
+  call check(is_close(${Q}$(1 + eps), one), pre // 'is_close default')
+  call check(.not. is_close(one, ${Q}$(1.1_${k}$)), pre // 'is_close rejects')
+  call check(is_close(${Q}$(0), ${Q}$(1e-3_${k}$), abs_tol=1e-2_${k}$), pre // 'is_close abs_tol')
+  call check(.not. is_close(${Q}$(0), ${Q}$(1e-3_${k}$), rel_tol=0.5_${k}$), pre // 'is_close rel_tol near 0')
+
+  ! Basic functions ---------------------------------------------------
+  p = ${Q}$(1, 2, 3, 4)
+  call check(abs(abs(${Q}$(1, 2, 2, 4)) - 5) <= tol, pre // 'abs')
+  call check(real(p) == 1 .and. all(aimag(p) == [2, 3, 4]), pre // 'real, aimag')
+  call check(conjg(p) == ${Q}$(1, -2, -3, -4), pre // 'conjg')
+  call check(abs(abs(normalize(p)) - 1) <= tol, pre // 'normalize')
+  call check(inv(${Q}$(2)) == ${Q}$(0.5_${k}$), pre // 'inv')
+
+  ! Elementary functions ----------------------------------------------
+  ! On a complex plane through the real axis they match intrinsic complex.
+  z = cmplx(0.3_${k}$, -0.7_${k}$, ${k}$)
+  q = ${Q}$(0.3_${k}$, -0.7_${k}$)
+#:for f in FUNCS_C
+  r = ${f}$(q)
+  call check(vclose_${s}$([r%w, r%x, r%y, r%z], [real(${f}$(z)), aimag(${f}$(z)), 0._${k}$, 0._${k}$], tol), &
+    & pre // '${f}$ matches complex')
+#:endfor
+  q = ${Q}$(0.3_${k}$, 0.2_${k}$, -0.4_${k}$, 0.5_${k}$)
+  call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
+  call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
+  call check(is_close(cosh(q)**2 - sinh(q)**2, one, tol), pre // 'cosh^2 - sinh^2 = 1')
+  call check(is_close(tan(q), sin(q)/cos(q), tol) .and. is_close(tanh(q), sinh(q)/cosh(q), tol), pre // 'tan, tanh')
+  call check(is_close(asin(sin(q)), q, tol) .and. is_close(acos(cos(q)), q, tol) .and. is_close(atan(tan(q)), q, tol), &
+    & pre // 'inverse trigonometric')
+  call check(is_close(sinh(asinh(q)), q, tol) .and. is_close(cosh(acosh(q)), q, tol) .and. is_close(tanh(atanh(q)), q, tol), &
+    & pre // 'inverse hyperbolic')
+  call check(is_close(log10(${Q}$(100)), ${Q}$(2), tol), pre // 'log10')
+  call check(is_close(sqrt(${Q}$(-4)), 2*i, tol), pre // 'sqrt(-4) = 2i')
+  call check(is_close(log(-one), pi*i, tol), pre // 'log(-1) = pi i')
+  call check(is_close(exp(pi*k), -one, abs_tol=tol), pre // 'exp(pi k) = -1')
+  t = 1e-10_${k}$
+  r = exp(${Q}$(0, t))
+  call check(abs(r%x - sin(t)) <= tol*t, pre // 'exp keeps tiny vector part')
+  r = log(${Q}$(1, 0, t))
+  call check(abs(r%y - atan(t)) <= tol*t, pre // 'log keeps tiny vector part')
+
+  ! Rotations ---------------------------------------------------------
+  q = from_axis_angle([0._${k}$, 0._${k}$, 2._${k}$], pi/2)
+  call check(vclose_${s}$(rotate(q, [1._${k}$, 0._${k}$, 0._${k}$]), [0._${k}$, 1._${k}$, 0._${k}$], tol), &
+    & pre // 'rotate x about z to y')
+  call check(vclose_${s}$(rotate(2*q, [0._${k}$, 1._${k}$, 0._${k}$]), [-1._${k}$, 0._${k}$, 0._${k}$], tol), &
+    & pre // 'rotate with non-unit quaternion')
+  call check(is_close(from_euler_zyx(pi/2, 0._${k}$, 0._${k}$), q, tol), pre // 'yaw is about z')
+  call check(vclose_${s}$(rotate(from_euler_zyx(0._${k}$, pi/2, 0._${k}$), [1._${k}$, 0._${k}$, 0._${k}$]), &
+    & [0._${k}$, 0._${k}$, -1._${k}$], tol), pre // 'pitch is about y')
+  call check(vclose_${s}$(rotate(from_euler_zyx(0._${k}$, 0._${k}$, pi/2), [0._${k}$, 1._${k}$, 0._${k}$]), &
+    & [0._${k}$, 0._${k}$, 1._${k}$], tol), pre // 'roll is about x')
+  p = from_axis_angle([0._${k}$, 0._${k}$, 1._${k}$], 0.3_${k}$) * from_axis_angle([0._${k}$, 1._${k}$, 0._${k}$], -0.2_${k}$) &
+    & * from_axis_angle([1._${k}$, 0._${k}$, 0._${k}$], 0.1_${k}$)
+  call check(is_close(from_euler_zyx(0.3_${k}$, -0.2_${k}$, 0.1_${k}$), p, tol), pre // 'euler order z y x')
+  call to_axis_angle(from_axis_angle([1._${k}$, -2._${k}$, 2._${k}$], 2.5_${k}$), axis, angle)
+  call check(vclose_${s}$(axis, [1._${k}$, -2._${k}$, 2._${k}$]/3, tol) .and. abs(angle - 2.5_${k}$) <= tol, &
+    & pre // 'axis-angle round trip')
+  call to_axis_angle(one, axis, angle)
+  call check(all(axis == [1, 0, 0]) .and. angle == 0, pre // 'identity axis-angle')
+
+  call random_rotation(qs)
+  v = [0.5_${k}$, -1._${k}$, 2._${k}$]
+  do n = 1, 100
+    q = qs(n)
+    r = q*${Q}$(0, v(1), v(2), v(3))*conjg(q)
+    call check(vclose_${s}$(rotate(q, v), [r%x, r%y, r%z], tol), pre // 'rotate = q v q*')
+    m = to_matrix(q)
+    call check(vclose_${s}$(matmul(m, v), rotate(q, v), tol), pre // 'to_matrix matches rotate')
+    call check(vclose_${s}$(reshape(matmul(transpose(m), m), [9]), reshape(to_matrix(one), [9]), tol), &
+      & pre // 'to_matrix orthogonal')
+    if (q%w < 0) q = -q
+    call check(is_close(from_matrix(m), q, tol), pre // 'from_matrix round trip')
+    call to_euler_zyx(q, yaw, pitch, roll)
+    call check(is_close(from_euler_zyx(yaw, pitch, roll), q, tol) .or. is_close(from_euler_zyx(yaw, pitch, roll), -q, tol), &
+      & pre // 'euler round trip')
+  end do
+  ! Half turns exercise every branch of Shepperd's method
+  do n = 1, 4
+    axis = [real(${k}$) :: merge(1, 0, n == 1 .or. n == 4), merge(1, 0, n == 2 .or. n == 4), merge(1, 0, n >= 3)]
+    m = to_matrix(from_axis_angle(axis, pi))
+    call check(vclose_${s}$(reshape(to_matrix(from_matrix(m)), [9]), reshape(m, [9]), tol), pre // 'from_matrix half turn')
+  end do
+  ! Gimbal lock: the rotation survives even though yaw and roll are not unique
+  q = from_euler_zyx(0.3_${k}$, pi/2, 0.2_${k}$)
+  call to_euler_zyx(q, yaw, pitch, roll)
+  call check(abs(pitch - pi/2) <= ltol, pre // 'gimbal pitch')
+  call check(vclose_${s}$(reshape(to_matrix(from_euler_zyx(yaw, pitch, roll)), [9]), reshape(to_matrix(q), [9]), ltol), &
+    & pre // 'gimbal rotation')
+
+  p = one
+  q = from_axis_angle([0._${k}$, 0._${k}$, 1._${k}$], 1._${k}$)
+  call check(is_close(slerp(p, q, 0._${k}$), p, tol) .and. is_close(slerp(p, q, 1._${k}$), q, tol), pre // 'slerp ends')
+  r = from_axis_angle([0._${k}$, 0._${k}$, 1._${k}$], 0.3_${k}$)
+  call check(is_close(slerp(p, q, 0.3_${k}$), r, tol), pre // 'slerp constant speed')
+  call check(is_close(slerp(p, -q, 0.3_${k}$), r, tol), pre // 'slerp shorter arc')
+  call check(slerp(q, q, 0.3_${k}$) == q, pre // 'slerp equal ends')
+
+  ! Random numbers ----------------------------------------------------
+  call check(all(abs(abs(qs) - 1) <= tol), pre // 'random_rotation unit')
+  call check(any(qs%w < 0) .and. any(qs%w > 0) .and. any(qs%z < 0) .and. any(qs%z > 0), pre // 'random_rotation signs')
+  call check(abs(sum(qs%x)/size(qs)) < 0.1_${k}$, pre // 'random_rotation mean')
+  call random_number(qs)
+  call check(all(qs%w >= 0 .and. qs%w < 1 .and. qs%x >= 0 .and. qs%x < 1 .and. qs%y >= 0 .and. qs%y < 1 &
+    & .and. qs%z >= 0 .and. qs%z < 1), pre // 'random_number in [0,1)')
+
+  ! Text ----------------------------------------------------------------
+  p = ${Q}$(1, -2, 3, -4)
+  call check(to_string(p, '(f0.1)') == '1.0 - 2.0i + 3.0j - 4.0k', pre // 'to_string fmt')
+  call check(is_close(${Q}$(to_string(p*pi)), p*pi, tol), pre // 'to_string default round trip')
+#ifndef __NVCOMPILER
+  ! nvfortran does not support derived-type I/O on character variables
+  write(buf, '(dt"f"(6,2))') p
+  call check(buf == '1.00 - 2.00i + 3.00j - 4.00k', pre // 'DT"F"(6,2)')
+  write(buf, '(dt"es10.2")') p*pi
+  call check(is_close(${Q}$(buf), p*pi, 1e-2_${k}$), pre // 'DT"ES10.2"')
+  write(buf, '(dt)') p
+  call check(${Q}$(buf) == p, pre // 'DT g0')
+#endif
+  ! One read statement per file: ifx 2026 fails on a read that follows a
+  ! derived-type read of a record starting with blanks.
+  q = p*pi
+  open(newunit=u, status='scratch')
+  write(u, *) p, q
+  rewind(u)
+  read(u, *) r, q
+  close(u)
+  call check(r == p .and. is_close(q, p*pi, tol), pre // 'list-directed round trip')
+  open(newunit=u, status='scratch')
+  write(u, '(a)') '7+1k, 8 + 2i + 0j - 1K'
+  rewind(u)
+  read(u, *) r, q
+  close(u)
+  call check(r == ${Q}$(7, 0, 0, 1) .and. q == ${Q}$(8, 2, 0, -1), pre // 'read compact, comma')
+#ifndef __GFORTRAN__
+  ! libgfortran leaks the format of a child read that ends at end of record,
+  ! which fails the LeakSanitizer in the gfortran debug profile.
+  open(newunit=u, status='scratch')
+  write(u, '(a)') '1 + 2i'
+  rewind(u)
+  read(u, *, iostat=ios) r
+  close(u)
+  call check(ios > 0, pre // 'read without k part is an error')
+#endif
+  open(newunit=u, status='scratch')
+  write(u, '(a)') 'quark'
+  rewind(u)
+  read(u, *, iostat=ios) r
+  close(u)
+  call check(ios > 0, pre // 'read garbage is an error')
+end subroutine test_${s}$
+$:END(g)
+
+#:endfor
+end program test_quaternions

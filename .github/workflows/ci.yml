@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} ${{ matrix.compiler }} ${{ matrix.version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, compiler: gcc, version: 14 }
+          - { os: ubuntu-24.04, compiler: gcc, version: 13 }
+          - { os: macos-15, compiler: gcc, version: 14 }
+          - { os: windows-2025, compiler: gcc, version: 14 }
+          - { os: ubuntu-24.04, compiler: intel, version: '2026.1' }
+          - { os: windows-2025, compiler: intel, version: '2026.1' }
+          - { os: ubuntu-24.04, compiler: nvidia-hpc, version: '26.1' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: fortran-lang/setup-fortran@v1
+        id: setup-fortran
+        with:
+          compiler: ${{ matrix.compiler }}
+          version: ${{ matrix.version }}
+      - uses: fortran-lang/setup-fpm@v10
+        with:
+          fpm-version: v0.13.0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test (debug)
+        run: fpm test --compiler ${{ steps.setup-fortran.outputs.fc }} --profile debug
+      - name: Test (release)
+        run: fpm test --compiler ${{ steps.setup-fortran.outputs.fc }} --profile release
+      - name: Examples and app
+        run: |
+          fpm run --compiler ${{ steps.setup-fortran.outputs.fc }} --profile release --example --all
+          fpm run --compiler ${{ steps.setup-fortran.outputs.fc }} --profile release
+
+  flang:
+    name: ubuntu-24.04 LLVM flang 21
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install flang
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 21
+          sudo apt-get install -y flang-21
+      - uses: fortran-lang/setup-fpm@v10
+        with:
+          fpm-version: v0.13.0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test (debug)
+        run: fpm test --compiler flang-21 --profile debug
+      - name: Test (release)
+        run: fpm test --compiler flang-21 --profile release
+      - name: Examples and app
+        run: |
+          fpm run --compiler flang-21 --profile release --example --all
+          fpm run --compiler flang-21 --profile release
+
+  checks:
+    name: make build, generated files, llms.txt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install fypp
+        run: pip install fypp==3.3
+      - name: Generated files match templates
+        run: make check-generated
+      - name: llms.txt covers the API and examples
+        run: python3 tools/check_docs.py
+      - name: make build
+        run: make test

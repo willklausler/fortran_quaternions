@@ -1,0 +1,33 @@
+#! Definitions shared by the fypp templates.
+#!
+#! KINDS: (suffix, iso_fortran_env kind, guarded by QUATERNIONS_QP)
+#:set KINDS = [('sp', 'real32', False), ('dp', 'real64', False), ('qp', 'real128', True)]
+#! INTS: (suffix, iso_fortran_env kind) of integers allowed in mixed arithmetic
+#:set INTS = [('i8', 'int8'), ('i16', 'int16'), ('i32', 'int32'), ('i64', 'int64')]
+#!
+#:def BEGIN(g)
+#:if g
+#if QUATERNIONS_QP
+#:endif
+#:enddef
+#:def END(g)
+#:if g
+#endif
+#:endif
+#:enddef
+#!
+#:def HEADER()
+! ======================================================================
+! GENERATED FILE - DO NOT EDIT.  Edit the templates in tmpl/ and run `make generate`.
+! API summary for tools and agents: llms.txt
+! ======================================================================
+! Quadruple precision (quat_qp) is compiled unless QUATERNIONS_QP=0.
+! It is switched off by default where real128 is unavailable.
+#ifndef QUATERNIONS_QP
+#if defined(__NVCOMPILER) || defined(__PGI) || (defined(__APPLE__) && defined(__aarch64__))
+#define QUATERNIONS_QP 0
+#else
+#define QUATERNIONS_QP 1
+#endif
+#endif
+#:enddef

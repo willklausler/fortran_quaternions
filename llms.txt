@@ -1,0 +1,178 @@
+# fortran_quaternions
+
+> Fortran module `quaternions`: quaternion types `quat_sp`, `quat_dp`, `quat_qp` (real32/real64/real128) that behave like the intrinsic `complex` type, plus 3D rotations. Pure Fortran 2008, fpm or make. This file is the complete API reference for tools and coding agents; it is checked against the source in CI.
+
+Use: `use quaternions` (everything) or `use quaternions, only: quat_dp, ...`.
+fpm dependency: `fortran_quaternions = { git = "https://github.com/willklausler/fortran_quaternions" }`
+Kinds are not exported: use `real32`, `real64`, `real128` from `iso_fortran_env`.
+
+## Conventions (read first)
+
+- q = w + xi + yj + zk. Public components `q%w, q%x, q%y, q%z`, scalar first. No getters.
+- Hamilton product: ij = k, jk = i, ki = j, i**2 = j**2 = k**2 = ijk = -1. Not commutative.
+- `a/b` is right division `a*inv(b)`. `n/q` is `n*inv(q)`.
+- `==` and `/=` are exact (like intrinsic). Use `is_close` for tolerances.
+- Mixed arithmetic: quaternion with a real of the SAME kind, or an integer of ANY kind. `quat_dp + 1.0` (default real) does not compile; write `1._dp` or `1`. Convert kinds explicitly: `quat_dp(q_sp)`.
+- Rotations are active: `rotate(q, v)` returns q v q^-1 (the vector turns; the frame stays). Right-handed. `q` and `-q` are the same rotation. `q*p` applies p first, then q.
+- Euler angles: ZYX only. `from_euler_zyx(yaw, pitch, roll)` = Rz(yaw) Ry(pitch) Rx(roll): roll about x first, then pitch about y, then yaw about z (fixed axes). Radians.
+- Elementary functions use the complex embedding: f(w + u n) = Re f(w + in) + u Im f(w + in), u = (x,y,z)/n. Principal branches match intrinsic complex. On the real axis (x = y = z = 0) the axis u = i, so `sqrt(quat_dp(-4))` = 2i and `log(quat_dp(-1))` = pi i.
+- No error stops. Invalid arithmetic gives IEEE Inf/NaN: `inv(0)`, `normalize(0)`, `log(0)`, `from_axis_angle` with a zero axis. A string that is not a quaternion gives all components NaN.
+
+## Types and constructors
+
+`type(quat_sp)`, `type(quat_dp)`, `type(quat_qp)`; components default to 0.
+`quat_qp` exists only if `quaternions_has_qp` is true (see Precision).
+
+| Call | Result |
+|---|---|
+| `quat_dp(w, x, y, z)` | structure constructor; trailing parts may be omitted (0); integer or real arguments are converted; usable in `parameter` |
+| `quat_dp(1)`, `quat_dp(2.5_dp)` | real quaternion |
+| `quat_dp(a)` | `real(dp) :: a(4)` = [w, x, y, z] |
+| `quat_dp(str)` | parse, elemental: terms like `1.5`, `-2i`, `+ 3e-2j`, `k`, any order, sum of repeated parts; no blank between number and unit; i/j/k case-insensitive; `nan`, `inf` allowed; invalid -> all NaN |
+| `quat_dp(q_sp)`, `quat_dp(q_qp)` | kind conversion, elemental |
+
+Assignment `q = n` (integer, any kind) or `q = r` (real, same kind) sets w and zeroes x, y, z. Elemental.
+
+## Operators
+
+All elemental. `Q` = quaternion, `R` = real of the same kind, `I` = integer of any kind.
+
+| Operator | Operands |
+|---|---|
+| `+`, `-` | unary Q; Q op Q, Q op R, R op Q, Q op I, I op Q |
+| `*` | Q*Q (Hamilton), Q*R, R*Q, Q*I, I*Q |
+| `/` | Q/Q = Q*inv(Q), Q/R, R/Q, Q/I, I/Q |
+| `**` | Q**I by repeated squaring (exact when products are; negative I uses inv); Q**R, Q**Q = exp(log(a)*b), R**Q, I**Q = exp(log(a)*b) |
+| `==`, `/=` | exact; Q op R and Q op I are true for `==` only if the vector part is 0 and w equals the scalar |
+
+## Functions
+
+E = elemental. Kind of the result = kind of the argument.
+
+| Function | Returns |
+|---|---|
+| `abs(q)` E | real: norm sqrt(w^2+x^2+y^2+z^2), overflow-safe |
+| `conjg(q)` E | w - xi - yj - zk |
+| `real(q)` E | real: w |
+| `aimag(q)` | real(3): [x, y, z] (not elemental) |
+| `dot_product(a, b)` E | real: aw*bw + ax*bx + ay*by + az*bz |
+| `inv(q)` E | conjg(q)/abs(q)**2, scaled to avoid overflow |
+| `normalize(q)` E | q/abs(q) |
+| `is_close(a, b [, rel_tol] [, abs_tol])` E | logical: abs(a-b) <= max(rel_tol*max(abs(a),abs(b)), abs_tol); defaults rel_tol = sqrt(epsilon), abs_tol = 0 |
+| `sqrt exp log log10` E | principal branch, like complex |
+| `sin cos tan asin acos atan` E | like complex |
+| `sinh cosh tanh asinh acosh atanh` E | like complex |
+| `to_string(q [, fmt])` | character(:), allocatable: `"w + xi + yj + zk"`, each part written with `fmt` (default `'(g0)'`), sign shown between parts, e.g. `to_string(q, '(f0.2)')` -> `1.00 - 2.00i + 3.00j + 4.00k` |
+
+## Rotations
+
+| Procedure | Description |
+|---|---|
+| `from_axis_angle(axis, angle)` | function, `axis(3)` real (need not be unit, nonzero), `angle` radians -> unit quaternion |
+| `call to_axis_angle(q, axis, angle)` | pure subroutine, `intent(out) :: axis(3), angle`; angle in [0, pi]; identity gives axis [1,0,0], angle 0; q need not be unit |
+| `rotate(q, v)` | function, real(3): q v inv(q); q need not be unit |
+| `to_matrix(q)` | function, real(3,3) R with `matmul(R, v) == rotate(q, v)`; q need not be unit |
+| `from_matrix(m)` | function, unit quaternion with w >= 0 from rotation matrix `m(3,3)` (Shepperd's method) |
+| `from_euler_zyx(yaw, pitch, roll)` E | function: Rz(yaw) Ry(pitch) Rx(roll) |
+| `call to_euler_zyx(q, yaw, pitch, roll)` E | subroutine: yaw, roll in (-pi, pi], pitch in [-pi/2, pi/2]; at gimbal lock (pitch = +-pi/2) roll = 0 |
+| `slerp(a, b, t)` E | spherical linear interpolation of unit quaternions along the shorter arc; t = 0 -> a, t = 1 -> b or -b |
+| `call random_rotation(q)` E | impure: unit quaternion uniform over rotations (Shoemake) |
+| `call random_number(q)` E | impure: each component uniform in [0, 1), like the intrinsic; NOT a rotation |
+
+## Text I/O (derived-type I/O)
+
+- `print *, q` / `write(u, *) q`: a blank, then `w + xi + yj + zk` with `g0` parts.
+- `write(u, '(dt"f8.4")') q` or `'(dt"f"(8,4))'`: each part with that edit descriptor. `'(dt(12,4))'` uses `g12.4`. `'(dt)'` uses `g0`.
+- `read(u, *) q` or `read(u, '(dt)') q`: reads from an external file, skipping leading blanks and commas, up to and including the `k` part, which must be present and on the same record. Spaced (`1 + 2i + 3j + 4k`) and compact (`1+2i+3j+4k`) text both work. Several per record: `read(u, *) p, q`. Error (iostat > 0) if there is no k part or the text is not a quaternion.
+- Character variables: use `to_string(q)` and `quat_dp(str)`, not internal `read`/`write`. Internal-file `read` is not supported; internal `write` works except on nvfortran.
+
+## Precision (quat_qp)
+
+`quat_qp` and all its procedures are compiled when the C preprocessor macro `QUATERNIONS_QP` is 1. If it is not defined, it defaults to 0 for nvfortran (`__NVCOMPILER`, `__PGI`) and gfortran on Apple Silicon (`__APPLE__` and `__aarch64__`), else 1. Override with `-DQUATERNIONS_QP=0` or `1`. `logical, parameter :: quaternions_has_qp` tells your code at compile time (as a constant) whether it is available; guard declarations of `quat_qp` in your own code with `#if` and the same condition.
+
+## Compiler notes
+
+Tested in CI with gfortran (Linux, macOS, Windows), ifx (Linux, Windows), LLVM flang and nvfortran.
+- nvfortran: derived-type I/O on character variables is not supported; `quat_qp` is off. In module `quaternions` the I/O generics are declared outside the types (an nvfortran workaround); with `use quaternions, only: ...` on nvfortran they are not imported, and `print` falls back to writing the four components as plain numbers.
+- ifx 2026.1: after a derived-type `read` from a record that starts with blanks (which list-directed `write` produces), the NEXT `read` statement on that unit fails (iostat 59). Read such records in one statement, or write them with `'(dt)'`.
+
+## Differs from
+
+- Intrinsic `complex`: quaternion multiplication is not commutative; mixed-kind arithmetic is not promoted (same kind required); no `cmplx`-style `kind=` argument; `aimag` returns a 3-vector.
+- Libraries storing [x, y, z, w] (Eigen internal storage, ROS, pdebuyl/fortran_quaternion): here storage and constructors are scalar first, `quat_dp(w, x, y, z)`.
+- JPL convention (ij = -k): not used. Passive rotations (frame turns): use `rotate(conjg(q), v)`.
+- saridut/rotlib: six Euler sequences and subroutine interfaces there; here functions and ZYX only.
+- Old releases of this package (type `quat`, kind `rk`, getters `q%r()`, `q%i()`, fuzzy `==`, `char(q)`): removed.
+
+## Module layout
+
+`quaternions` (use this) re-exports `quaternions_impl`. Source `src/quaternions.F90` is generated from `tmpl/quaternions.fypp`; the specific procedure names (e.g. `dp_mul_dp`) are private.
+
+## Examples
+
+These are the programs in `example/`, compiled in CI.
+
+```fortran
+program demo_algebra
+  !! Construction, arithmetic, functions, comparison and text I/O
+  use, intrinsic :: iso_fortran_env, only: dp => real64
+  use quaternions
+  implicit none
+  type(quat_dp) :: p, q, r
+  real(dp) :: v(3)
+  integer :: u
+
+  p = quat_dp(1, 2, 3, 4)               ! w + xi + yj + zk; structure constructor
+  q = quat_dp("0.5 - 1.5i + k")          ! parse text; omitted parts are 0
+  r = quat_dp([1._dp, 0._dp, 0._dp, 0._dp])
+  r = 2                                 ! assign integer (any kind) or real(dp)
+
+  print *, p*q                          ! Hamilton product, not commutative
+  print *, p/q, p*inv(q)                ! right division: both equal
+  print *, 2*p + 1._dp, p**2, p**0.5_dp ! same-kind reals, any integer kind
+  print *, abs(p), real(p), conjg(p)    ! abs is the norm |p|
+  v = aimag(p)                          ! vector part [x, y, z]
+  print *, v, p%x                       ! components are public: w, x, y, z
+  print *, exp(log(p)), sqrt(quat_dp(-4))
+
+  print *, p == quat_dp(1, 2, 3, 4)     ! exact, like intrinsic ==
+  print *, is_close(exp(log(p)), p)     ! tolerance, rel_tol = sqrt(epsilon)
+
+  print '(a)', to_string(p, '(f0.2)')   ! 1.00 + 2.00i + 3.00j + 4.00k
+  write(*, '(dt"f"(6,2))') p            ! same, via derived-type I/O
+  open(newunit=u, status='scratch')
+  write(u, *) p, q                      ! list-directed: w + xi + yj + zk
+  rewind(u)
+  read(u, *) r, q                       ! each ends at its k part
+  close(u)
+  print *, r, q
+end program demo_algebra
+```
+
+```fortran
+program demo_rotations
+  !! Rotations: Hamilton convention, active (rotates the vector)
+  use, intrinsic :: iso_fortran_env, only: dp => real64
+  use quaternions
+  implicit none
+  real(dp), parameter :: pi = acos(-1._dp)
+  type(quat_dp) :: q, p
+  real(dp) :: axis(3), angle, m(3,3), yaw, pitch, roll
+
+  q = from_axis_angle([0._dp, 0._dp, 1._dp], pi/2)  ! 90 degrees about z
+  print *, rotate(q, [1._dp, 0._dp, 0._dp])         ! x -> y: [0, 1, 0]
+
+  m = to_matrix(q)                                  ! matmul(m, v) == rotate(q, v)
+  p = from_matrix(m)                                ! unit, w >= 0
+  call to_axis_angle(p, axis, angle)
+  print *, axis, angle
+
+  q = from_euler_zyx(yaw=0.3_dp, pitch=-0.2_dp, roll=0.1_dp)
+  call to_euler_zyx(q, yaw, pitch, roll)
+  print *, yaw, pitch, roll
+
+  call random_rotation(p)                           ! uniform over rotations
+  print *, slerp(q, p, 0.5_dp)                      ! halfway, shorter arc
+  print *, rotate(q*p, [1._dp, 2._dp, 3._dp])       ! apply p, then q
+end program demo_rotations
+```

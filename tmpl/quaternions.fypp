@@ -1,0 +1,875 @@
+! SPDX-License-Identifier: MIT
+#:include "common.fypp"
+$:HEADER()
+#:set BINOPS = [('+', 'add'), ('-', 'sub'), ('*', 'mul'), ('/', 'div'), ('==', 'eq'), ('/=', 'ne')]
+#:set FUNCS = ['sqrt', 'exp', 'log', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh']
+module quaternions_impl
+!! Implementation of module quaternions; use that instead.
+!!
+!! Quaternions that behave like Fortran's intrinsic `complex` type.
+!!
+!! A quaternion is q = w + xi + yj + zk, stored scalar first as the public
+!! components `w, x, y, z`.  Types `quat_sp`, `quat_dp` and `quat_qp` hold
+!! real32, real64 and real128 components.  Arithmetic mixes a quaternion with
+!! reals of the same kind and with integers of any kind.
+!!
+!! Conventions: Hamilton product (ij = k), active rotation v' = q v q*,
+!! `a/b = a*inv(b)`, exact `==`, Euler angles ZYX (yaw, pitch, roll).
+  use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int8, int16, int32, int64
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+  implicit none
+  private
+
+#:for s, k, g in KINDS
+$:BEGIN(g)
+  public :: quat_${s}$
+$:END(g)
+#:endfor
+  public :: quaternions_has_qp
+#ifdef __NVCOMPILER
+#:for s, k, g in KINDS
+$:BEGIN(g)
+  public :: write_${s}$, read_${s}$
+$:END(g)
+#:endfor
+#endif
+  public :: assignment(=)
+  public :: operator(+), operator(-), operator(*), operator(/), operator(**)
+  public :: operator(==), operator(/=)
+  public :: abs, conjg, real, aimag, dot_product, inv, normalize, is_close, to_string
+#:for f in FUNCS
+  public :: ${f}$
+#:endfor
+  public :: log10
+  public :: random_number, random_rotation
+  public :: from_axis_angle, to_axis_angle, rotate, to_matrix, from_matrix
+  public :: from_euler_zyx, to_euler_zyx, slerp
+
+  logical, parameter :: quaternions_has_qp = QUATERNIONS_QP == 1
+  !! True if `quat_qp` was compiled in
+
+#:for s, k, g in KINDS
+$:BEGIN(g)
+  type :: quat_${s}$
+    !! Quaternion w + xi + yj + zk with real(${k}$) components
+    real(${k}$) :: w = 0, x = 0, y = 0, z = 0
+#ifndef __NVCOMPILER
+  contains
+    procedure, private :: write_${s}$
+    procedure, private :: read_${s}$
+    generic :: write(formatted) => write_${s}$
+    generic :: read(formatted) => read_${s}$
+#endif
+  end type quat_${s}$
+
+  interface quat_${s}$
+    !! Construct from a real(${k}$) array [w, x, y, z], a string such as
+    !! "1 + 2i - 3j + 4k", or a quaternion of another kind.  The structure
+    !! constructor quat_${s}$(w, x, y, z) also works; omitted parts are 0.
+    module procedure :: ${s}$_from_array, ${s}$_from_string
+#:for s2, k2, g2 in KINDS
+#:if s2 != s
+$:BEGIN(g2)
+    module procedure :: ${s}$_from_${s2}$
+$:END(g2)
+#:endif
+#:endfor
+  end interface quat_${s}$
+$:END(g)
+
+#:endfor
+  interface assignment(=)
+    !! Assign a real of the same kind or an integer of any kind
+#:for s, k, g in KINDS
+#:set OT = [('r', 'real(' + k + ')')] + [(t, 'integer(' + ik + ')') for t, ik in INTS]
+$:BEGIN(g)
+#:for t, T in OT
+    module procedure :: ${s}$_assign_${t}$
+#:endfor
+$:END(g)
+#:endfor
+  end interface assignment(=)
+
+#:for op, name in BINOPS
+  interface operator(${op}$)
+#:for s, k, g in KINDS
+#:set OT = [('r', 'real(' + k + ')')] + [(t, 'integer(' + ik + ')') for t, ik in INTS]
+$:BEGIN(g)
+    module procedure :: ${s}$_${name}$_${s}$
+#:for t, T in OT
+    module procedure :: ${s}$_${name}$_${t}$, ${t}$_${name}$_${s}$
+#:endfor
+#:if op == '+'
+    module procedure :: ${s}$_pos
+#:elif op == '-'
+    module procedure :: ${s}$_neg
+#:endif
+$:END(g)
+#:endfor
+  end interface operator(${op}$)
+
+#:endfor
+  interface operator(**)
+    !! Integer powers by repeated squaring; other powers via exp and log
+#:for s, k, g in KINDS
+#:set OT = [('r', 'real(' + k + ')')] + [(t, 'integer(' + ik + ')') for t, ik in INTS]
+$:BEGIN(g)
+    module procedure :: ${s}$_pow_${s}$
+#:for t, T in OT
+    module procedure :: ${s}$_pow_${t}$, ${t}$_pow_${s}$
+#:endfor
+$:END(g)
+#:endfor
+  end interface operator(**)
+
+#:set GENERICS = [ &
+  & ('abs', 'abs', 'Norm |q|'), &
+  & ('conjg', 'conjg', 'Conjugate w - xi - yj - zk'), &
+  & ('real', 'real', 'Scalar part w'), &
+  & ('aimag', 'aimag', 'Vector part [x, y, z]'), &
+  & ('dot_product', 'dot', 'Four-dimensional dot product'), &
+  & ('inv', 'inv', 'Inverse conjg(q)/|q|**2'), &
+  & ('normalize', 'normalize', 'Unit quaternion q/|q|'), &
+  & ('is_close', 'is_close', 'True if |a-b| <= max(rel_tol*max(|a|,|b|), abs_tol)'), &
+  & ('to_string', 'to_string', 'Text "w + xi + yj + zk", each part written with fmt (default "(g0)")'), &
+  & ('log10', 'log10', 'Base-10 logarithm'), &
+  & ('random_number', 'random_number', 'Each component uniform in [0, 1), like the intrinsic'), &
+  & ('random_rotation', 'random_rotation', 'Unit quaternion uniformly distributed over all rotations'), &
+  & ('from_axis_angle', 'from_axis_angle', 'Rotation by angle (radians) about axis (need not be unit)'), &
+  & ('to_axis_angle', 'to_axis_angle', 'Unit axis and angle in [0, pi] of the rotation q'), &
+  & ('rotate', 'rotate', 'Rotate vector v: q v inv(q)'), &
+  & ('to_matrix', 'to_matrix', 'Rotation matrix R with matmul(R, v) == rotate(q, v)'), &
+  & ('from_matrix', 'from_matrix', 'Unit quaternion (w >= 0) from a rotation matrix'), &
+  & ('from_euler_zyx', 'from_euler_zyx', 'Rotation Rz(yaw) Ry(pitch) Rx(roll)'), &
+  & ('to_euler_zyx', 'to_euler_zyx', 'Yaw, pitch, roll of q; roll = 0 at gimbal lock'), &
+  & ('slerp', 'slerp', 'Spherical linear interpolation along the shorter arc')]
+#:for gen, name, doc in GENERICS + [(f, f, 'Elementary function, consistent with complex ' + f) for f in FUNCS]
+  interface ${gen}$
+    !! ${doc}$
+#:for s, k, g in KINDS
+$:BEGIN(g)
+    module procedure :: ${s}$_${name}$
+$:END(g)
+#:endfor
+  end interface ${gen}$
+
+#:endfor
+contains
+
+pure function lower(s) result(r)
+  !! Lowercase ASCII letters
+  character(*), intent(in) :: s
+  character(len(s)) :: r
+  integer :: i
+  r = s
+  do i = 1, len(s)
+    if (s(i:i) >= 'A' .and. s(i:i) <= 'Z') r(i:i) = achar(iachar(s(i:i)) + 32)
+  end do
+end function lower
+
+pure function itoa(i) result(s)
+  integer, intent(in) :: i
+  character(:), allocatable :: s
+  character(24) :: buf
+  write(buf, '(i0)') i
+  s = trim(buf)
+end function itoa
+
+#:for s, k, g in KINDS
+#:set Q = 'type(quat_' + s + ')'
+#:set OT = [('r', 'real(' + k + ')')] + [(t, 'integer(' + ik + ')') for t, ik in INTS]
+$:BEGIN(g)
+!=======================================================================
+! quat_${s}$
+!=======================================================================
+
+pure function ${s}$_from_array(a) result(q)
+  real(${k}$), intent(in) :: a(4)
+  ${Q}$ :: q
+  q = quat_${s}$(a(1), a(2), a(3), a(4))
+end function ${s}$_from_array
+
+elemental function ${s}$_from_string(str) result(q)
+  !! Parse a string; all components are NaN if it is not a quaternion
+  character(*), intent(in) :: str
+  ${Q}$ :: q
+  integer :: ios
+  real(${k}$) :: nan
+  call ${s}$_parse(str, q, ios)
+  if (ios /= 0) then
+    nan = ieee_value(0._${k}$, ieee_quiet_nan)
+    q = quat_${s}$(nan, nan, nan, nan)
+  end if
+end function ${s}$_from_string
+
+#:for s2, k2, g2 in KINDS
+#:if s2 != s
+$:BEGIN(g2)
+elemental function ${s}$_from_${s2}$(a) result(q)
+  type(quat_${s2}$), intent(in) :: a
+  ${Q}$ :: q
+  q = quat_${s}$(real(a%w, ${k}$), real(a%x, ${k}$), real(a%y, ${k}$), real(a%z, ${k}$))
+end function ${s}$_from_${s2}$
+$:END(g2)
+
+#:endif
+#:endfor
+pure subroutine ${s}$_parse(str, q, ios)
+  !! Parse terms like "1.5", "-2i", "+ 3.0e-2j", "k" in any order and spacing.
+  !! No blank is allowed between a number and its unit.  ios /= 0 on error.
+  character(*), intent(in) :: str
+  ${Q}$, intent(out) :: q
+  integer, intent(out) :: ios
+  real(${k}$) :: c(4), val
+  integer :: p, n, start, nterms, part, e
+  logical :: neg
+
+  c = 0; ios = 0; p = 1; n = len_trim(str); nterms = 0
+  do
+    do while (p <= n)
+      if (str(p:p) /= ' ') exit
+      p = p + 1
+    end do
+    if (p > n) exit
+    neg = .false.
+    if (str(p:p) == '+' .or. str(p:p) == '-') then
+      neg = str(p:p) == '-'
+      p = p + 1
+      do while (p <= n)
+        if (str(p:p) /= ' ') exit
+        p = p + 1
+      end do
+    else if (nterms > 0) then
+      ios = 1; return
+    end if
+    start = p
+    if (lower(str(p:min(p+7, n))) == 'infinity') then
+      p = p + 8
+    else if (lower(str(p:min(p+2, n))) == 'inf' .or. lower(str(p:min(p+2, n))) == 'nan') then
+      p = p + 3
+    else
+      do while (p <= n)
+        if (index('0123456789.', str(p:p)) > 0) then
+          p = p + 1
+        else if (index('eEdD', str(p:p)) > 0 .and. p > start) then
+          e = p + 1
+          if (e <= n) then
+            if (str(e:e) == '+' .or. str(e:e) == '-') e = e + 1
+          end if
+          if (e > n) exit
+          if (index('0123456789', str(e:e)) == 0) exit
+          p = e + 1
+        else
+          exit
+        end if
+      end do
+    end if
+    if (p > start) then
+      read(str(start:p-1), *, iostat=ios) val
+      if (ios /= 0) return
+    else
+      val = 1
+    end if
+    part = 1
+    if (p <= n) part = index('iIjJkK', str(p:p))
+    if (part > 0 .and. p <= n) then
+      part = (part + 3)/2
+      p = p + 1
+    else
+      part = 1
+    end if
+    if (p == start) then
+      ios = 1; return
+    end if
+    if (neg) val = -val
+    c(part) = c(part) + val
+    nterms = nterms + 1
+  end do
+  if (nterms == 0) ios = 1
+  q = quat_${s}$(c(1), c(2), c(3), c(4))
+end subroutine ${s}$_parse
+
+#:for t, T in OT
+elemental subroutine ${s}$_assign_${t}$(q, a)
+  ${Q}$, intent(out) :: q
+  ${T}$, intent(in) :: a
+  q = quat_${s}$(real(a, ${k}$))
+end subroutine ${s}$_assign_${t}$
+
+#:endfor
+!-----------------------------------------------------------------------
+! Arithmetic and comparison
+!-----------------------------------------------------------------------
+
+elemental function ${s}$_pos(a) result(c)
+  ${Q}$, intent(in) :: a
+  ${Q}$ :: c
+  c = a
+end function ${s}$_pos
+
+elemental function ${s}$_neg(a) result(c)
+  ${Q}$, intent(in) :: a
+  ${Q}$ :: c
+  c = quat_${s}$(-a%w, -a%x, -a%y, -a%z)
+end function ${s}$_neg
+
+elemental function ${s}$_add_${s}$(a, b) result(c)
+  ${Q}$, intent(in) :: a, b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w + b%w, a%x + b%x, a%y + b%y, a%z + b%z)
+end function ${s}$_add_${s}$
+
+elemental function ${s}$_sub_${s}$(a, b) result(c)
+  ${Q}$, intent(in) :: a, b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w - b%w, a%x - b%x, a%y - b%y, a%z - b%z)
+end function ${s}$_sub_${s}$
+
+elemental function ${s}$_mul_${s}$(a, b) result(c)
+  !! Hamilton product
+  ${Q}$, intent(in) :: a, b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w*b%w - a%x*b%x - a%y*b%y - a%z*b%z, &
+               & a%w*b%x + a%x*b%w + a%y*b%z - a%z*b%y, &
+               & a%w*b%y - a%x*b%z + a%y*b%w + a%z*b%x, &
+               & a%w*b%z + a%x*b%y - a%y*b%x + a%z*b%w)
+end function ${s}$_mul_${s}$
+
+elemental function ${s}$_div_${s}$(a, b) result(c)
+  !! Right division a*inv(b)
+  ${Q}$, intent(in) :: a, b
+  ${Q}$ :: c
+  c = a*${s}$_inv(b)
+end function ${s}$_div_${s}$
+
+elemental logical function ${s}$_eq_${s}$(a, b) result(c)
+  ${Q}$, intent(in) :: a, b
+  c = a%w == b%w .and. a%x == b%x .and. a%y == b%y .and. a%z == b%z
+end function ${s}$_eq_${s}$
+
+elemental logical function ${s}$_ne_${s}$(a, b) result(c)
+  ${Q}$, intent(in) :: a, b
+  c = .not. ${s}$_eq_${s}$(a, b)
+end function ${s}$_ne_${s}$
+
+#:for t, T in OT
+elemental function ${s}$_add_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w + b, a%x, a%y, a%z)
+end function ${s}$_add_${t}$
+
+elemental function ${t}$_add_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a + b%w, b%x, b%y, b%z)
+end function ${t}$_add_${s}$
+
+elemental function ${s}$_sub_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w - b, a%x, a%y, a%z)
+end function ${s}$_sub_${t}$
+
+elemental function ${t}$_sub_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a - b%w, -b%x, -b%y, -b%z)
+end function ${t}$_sub_${s}$
+
+elemental function ${s}$_mul_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w*b, a%x*b, a%y*b, a%z*b)
+end function ${s}$_mul_${t}$
+
+elemental function ${t}$_mul_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a*b%w, a*b%x, a*b%y, a*b%z)
+end function ${t}$_mul_${s}$
+
+elemental function ${s}$_div_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  ${Q}$ :: c
+  c = quat_${s}$(a%w/b, a%x/b, a%y/b, a%z/b)
+end function ${s}$_div_${t}$
+
+elemental function ${t}$_div_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  ${Q}$ :: c
+  c = a*${s}$_inv(b)
+end function ${t}$_div_${s}$
+
+elemental logical function ${s}$_eq_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  c = a%w == b .and. a%x == 0 .and. a%y == 0 .and. a%z == 0
+end function ${s}$_eq_${t}$
+
+elemental logical function ${t}$_eq_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  c = ${s}$_eq_${t}$(b, a)
+end function ${t}$_eq_${s}$
+
+elemental logical function ${s}$_ne_${t}$(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: b
+  c = .not. ${s}$_eq_${t}$(a, b)
+end function ${s}$_ne_${t}$
+
+elemental logical function ${t}$_ne_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  c = .not. ${s}$_eq_${t}$(b, a)
+end function ${t}$_ne_${s}$
+
+#:endfor
+#:for t, T in OT
+#:if t == 'r'
+elemental function ${s}$_pow_r(a, b) result(c)
+  ${Q}$, intent(in) :: a
+  real(${k}$), intent(in) :: b
+  ${Q}$ :: c
+  c = ${s}$_from_c(${s}$_to_c(a)**b, a)
+end function ${s}$_pow_r
+#:else
+elemental function ${s}$_pow_${t}$(a, n) result(c)
+  !! Repeated squaring; exact where the products are exact
+  ${Q}$, intent(in) :: a
+  ${T}$, intent(in) :: n
+  ${Q}$ :: c, b
+  ${T}$ :: m
+  c = quat_${s}$(1)
+  b = a
+  m = n
+  do while (m /= 0)
+    if (mod(m, int(2, kind(m))) /= 0) c = c*b
+    m = m/2
+    if (m /= 0) b = b*b
+  end do
+  if (n < 0) c = ${s}$_inv(c)
+end function ${s}$_pow_${t}$
+#:endif
+
+elemental function ${t}$_pow_${s}$(a, b) result(c)
+  ${T}$, intent(in) :: a
+  ${Q}$, intent(in) :: b
+  ${Q}$ :: c
+  c = ${s}$_exp(${s}$_log(quat_${s}$(real(a, ${k}$)))*b)
+end function ${t}$_pow_${s}$
+
+#:endfor
+elemental function ${s}$_pow_${s}$(a, b) result(c)
+  !! exp(log(a)*b)
+  ${Q}$, intent(in) :: a, b
+  ${Q}$ :: c
+  c = ${s}$_exp(${s}$_log(a)*b)
+end function ${s}$_pow_${s}$
+
+!-----------------------------------------------------------------------
+! Basic functions
+!-----------------------------------------------------------------------
+
+elemental real(${k}$) function ${s}$_abs(q) result(r)
+  ${Q}$, intent(in) :: q
+  r = norm2([q%w, q%x, q%y, q%z])
+end function ${s}$_abs
+
+elemental function ${s}$_conjg(q) result(r)
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r
+  r = quat_${s}$(q%w, -q%x, -q%y, -q%z)
+end function ${s}$_conjg
+
+elemental real(${k}$) function ${s}$_real(q) result(r)
+  ${Q}$, intent(in) :: q
+  r = q%w
+end function ${s}$_real
+
+pure function ${s}$_aimag(q) result(v)
+  ${Q}$, intent(in) :: q
+  real(${k}$) :: v(3)
+  v = [q%x, q%y, q%z]
+end function ${s}$_aimag
+
+elemental real(${k}$) function ${s}$_dot(a, b) result(r)
+  ${Q}$, intent(in) :: a, b
+  r = a%w*b%w + a%x*b%x + a%y*b%y + a%z*b%z
+end function ${s}$_dot
+
+elemental function ${s}$_inv(q) result(r)
+  !! Scaled to avoid premature overflow and underflow
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r, p
+  real(${k}$) :: sc
+  sc = max(abs(q%w), abs(q%x), abs(q%y), abs(q%z))
+  p = q/sc
+  r = ${s}$_conjg(p)/(${s}$_dot(p, p)*sc)
+end function ${s}$_inv
+
+elemental function ${s}$_normalize(q) result(r)
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r
+  r = q/${s}$_abs(q)
+end function ${s}$_normalize
+
+elemental logical function ${s}$_is_close(a, b, rel_tol, abs_tol) result(c)
+  !! Defaults: rel_tol = sqrt(epsilon), abs_tol = 0
+  ${Q}$, intent(in) :: a, b
+  real(${k}$), intent(in), optional :: rel_tol, abs_tol
+  real(${k}$) :: rt, at
+  rt = sqrt(epsilon(1._${k}$))
+  if (present(rel_tol)) rt = rel_tol
+  at = 0
+  if (present(abs_tol)) at = abs_tol
+  c = ${s}$_abs(a - b) <= max(rt*max(${s}$_abs(a), ${s}$_abs(b)), at)
+end function ${s}$_is_close
+
+!-----------------------------------------------------------------------
+! Elementary functions: f(w + u n) = Re f(w + in) + u Im f(w + in), with
+! u = (x, y, z)/n, n = |(x, y, z)|, and u = i on the real axis.
+!-----------------------------------------------------------------------
+
+elemental complex(${k}$) function ${s}$_to_c(q) result(c)
+  ${Q}$, intent(in) :: q
+  c = cmplx(q%w, norm2([q%x, q%y, q%z]), kind=${k}$)
+end function ${s}$_to_c
+
+elemental function ${s}$_from_c(c, q) result(r)
+  !! Map c = a + ib back onto the axis of q
+  complex(${k}$), intent(in) :: c
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r
+  real(${k}$) :: n, b
+  n = norm2([q%x, q%y, q%z])
+  b = aimag(c)
+  if (n > 0) then
+    r = quat_${s}$(real(c), b*(q%x/n), b*(q%y/n), b*(q%z/n))
+  else
+    r = quat_${s}$(real(c), b)
+  end if
+end function ${s}$_from_c
+
+#:for f in FUNCS
+elemental function ${s}$_${f}$(q) result(r)
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r
+#:if f in ('asinh', 'acosh', 'atanh')
+  r = ${s}$_from_c(${s}$_c${f}$(${s}$_to_c(q)), q)
+#:else
+  r = ${s}$_from_c(${f}$(${s}$_to_c(q)), q)
+#:endif
+end function ${s}$_${f}$
+
+#:endfor
+! Complex inverse hyperbolic functions via the C99 identities, because not
+! every compiler provides them for complex arguments.
+
+elemental complex(${k}$) function ${s}$_casinh(c) result(r)
+  complex(${k}$), intent(in) :: c
+  complex(${k}$), parameter :: i = (0, 1)
+  r = -i*asin(i*c)
+end function ${s}$_casinh
+
+elemental complex(${k}$) function ${s}$_cacosh(c) result(r)
+  complex(${k}$), intent(in) :: c
+  complex(${k}$), parameter :: i = (0, 1)
+  r = i*acos(c)
+  if (real(r) < 0) r = -r
+end function ${s}$_cacosh
+
+elemental complex(${k}$) function ${s}$_catanh(c) result(r)
+  complex(${k}$), intent(in) :: c
+  complex(${k}$), parameter :: i = (0, 1)
+  r = -i*atan(i*c)
+end function ${s}$_catanh
+
+elemental function ${s}$_log10(q) result(r)
+  ${Q}$, intent(in) :: q
+  ${Q}$ :: r
+  r = ${s}$_log(q)/log(10._${k}$)
+end function ${s}$_log10
+
+!-----------------------------------------------------------------------
+! Random numbers
+!-----------------------------------------------------------------------
+
+impure elemental subroutine ${s}$_random_number(q)
+  ${Q}$, intent(out) :: q
+  real(${k}$) :: r(4)
+  call random_number(r)
+  q = ${s}$_from_array(r)
+end subroutine ${s}$_random_number
+
+impure elemental subroutine ${s}$_random_rotation(q)
+  !! Shoemake's method
+  ${Q}$, intent(out) :: q
+  real(${k}$), parameter :: twopi = 2*acos(-1._${k}$)
+  real(${k}$) :: r(3), a, b
+  call random_number(r)
+  a = sqrt(1 - r(1))
+  b = sqrt(r(1))
+  q = quat_${s}$(b*cos(twopi*r(3)), a*sin(twopi*r(2)), a*cos(twopi*r(2)), b*sin(twopi*r(3)))
+end subroutine ${s}$_random_rotation
+
+!-----------------------------------------------------------------------
+! Rotations
+!-----------------------------------------------------------------------
+
+pure function ${s}$_cross(a, b) result(c)
+  real(${k}$), intent(in) :: a(3), b(3)
+  real(${k}$) :: c(3)
+  c = [a(2)*b(3) - a(3)*b(2), a(3)*b(1) - a(1)*b(3), a(1)*b(2) - a(2)*b(1)]
+end function ${s}$_cross
+
+pure function ${s}$_from_axis_angle(axis, angle) result(q)
+  real(${k}$), intent(in) :: axis(3), angle
+  ${Q}$ :: q
+  real(${k}$) :: u(3)
+  u = axis/norm2(axis)*sin(angle/2)
+  q = quat_${s}$(cos(angle/2), u(1), u(2), u(3))
+end function ${s}$_from_axis_angle
+
+pure subroutine ${s}$_to_axis_angle(q, axis, angle)
+  !! axis = [1, 0, 0] for the identity rotation
+  ${Q}$, intent(in) :: q
+  real(${k}$), intent(out) :: axis(3), angle
+  ${Q}$ :: p
+  real(${k}$) :: n
+  p = ${s}$_normalize(q)
+  if (p%w < 0) p = -p
+  n = norm2([p%x, p%y, p%z])
+  angle = 2*atan2(n, p%w)
+  if (n > 0) then
+    axis = [p%x, p%y, p%z]/n
+  else
+    axis = [1, 0, 0]
+  end if
+end subroutine ${s}$_to_axis_angle
+
+pure function ${s}$_rotate(q, v) result(r)
+  !! v + 2(w t + u x t)/|q|**2 with t = u x v; q need not be a unit quaternion
+  ${Q}$, intent(in) :: q
+  real(${k}$), intent(in) :: v(3)
+  real(${k}$) :: r(3), u(3), t(3)
+  u = [q%x, q%y, q%z]
+  t = ${s}$_cross(u, v)
+  r = v + 2*(q%w*t + ${s}$_cross(u, t))/${s}$_dot(q, q)
+end function ${s}$_rotate
+
+pure function ${s}$_to_matrix(q) result(m)
+  ${Q}$, intent(in) :: q
+  real(${k}$) :: m(3,3), f
+  f = 2/${s}$_dot(q, q)
+  associate(w => q%w, x => q%x, y => q%y, z => q%z)
+    m(1,:) = [1 - f*(y*y + z*z), f*(x*y - z*w), f*(x*z + y*w)]
+    m(2,:) = [f*(x*y + z*w), 1 - f*(x*x + z*z), f*(y*z - x*w)]
+    m(3,:) = [f*(x*z - y*w), f*(y*z + x*w), 1 - f*(x*x + y*y)]
+  end associate
+end function ${s}$_to_matrix
+
+pure function ${s}$_from_matrix(m) result(q)
+  !! Shepperd's method: divide by the largest of 4w**2, 4x**2, 4y**2, 4z**2
+  real(${k}$), intent(in) :: m(3,3)
+  ${Q}$ :: q
+  real(${k}$) :: d(4), f
+  d = [m(1,1) + m(2,2) + m(3,3), m(1,1), m(2,2), m(3,3)]
+  select case (maxloc(d, dim=1))
+  case (1)
+    f = sqrt(1 + d(1))*2
+    q = quat_${s}$(f/4, (m(3,2) - m(2,3))/f, (m(1,3) - m(3,1))/f, (m(2,1) - m(1,2))/f)
+  case (2)
+    f = sqrt(1 + m(1,1) - m(2,2) - m(3,3))*2
+    q = quat_${s}$((m(3,2) - m(2,3))/f, f/4, (m(1,2) + m(2,1))/f, (m(1,3) + m(3,1))/f)
+  case (3)
+    f = sqrt(1 - m(1,1) + m(2,2) - m(3,3))*2
+    q = quat_${s}$((m(1,3) - m(3,1))/f, (m(1,2) + m(2,1))/f, f/4, (m(2,3) + m(3,2))/f)
+  case default
+    f = sqrt(1 - m(1,1) - m(2,2) + m(3,3))*2
+    q = quat_${s}$((m(2,1) - m(1,2))/f, (m(1,3) + m(3,1))/f, (m(2,3) + m(3,2))/f, f/4)
+  end select
+  if (q%w < 0) q = -q
+end function ${s}$_from_matrix
+
+elemental function ${s}$_from_euler_zyx(yaw, pitch, roll) result(q)
+  !! qz(yaw) qy(pitch) qx(roll): roll about x first, then pitch about y, then yaw about z
+  real(${k}$), intent(in) :: yaw, pitch, roll
+  ${Q}$ :: q
+  real(${k}$) :: cy, sy, cp, sp, cr, sr
+  cy = cos(yaw/2); sy = sin(yaw/2)
+  cp = cos(pitch/2); sp = sin(pitch/2)
+  cr = cos(roll/2); sr = sin(roll/2)
+  q = quat_${s}$(cr*cp*cy + sr*sp*sy, sr*cp*cy - cr*sp*sy, cr*sp*cy + sr*cp*sy, cr*cp*sy - sr*sp*cy)
+end function ${s}$_from_euler_zyx
+
+elemental subroutine ${s}$_to_euler_zyx(q, yaw, pitch, roll)
+  !! yaw, roll in (-pi, pi], pitch in [-pi/2, pi/2]
+  ${Q}$, intent(in) :: q
+  real(${k}$), intent(out) :: yaw, pitch, roll
+  real(${k}$), parameter :: pi = acos(-1._${k}$)
+  ${Q}$ :: p
+  real(${k}$) :: sp
+  p = ${s}$_normalize(q)
+  sp = 2*(p%w*p%y - p%z*p%x)
+  if (abs(sp) >= 1 - 4*epsilon(sp)) then
+    pitch = sign(pi/2, sp)
+    roll = 0
+    yaw = 2*atan2(p%z, p%w)
+    if (yaw > pi) yaw = yaw - 2*pi
+    if (yaw <= -pi) yaw = yaw + 2*pi
+  else
+    pitch = asin(sp)
+    roll = atan2(2*(p%w*p%x + p%y*p%z), 1 - 2*(p%x**2 + p%y**2))
+    yaw = atan2(2*(p%w*p%z + p%x*p%y), 1 - 2*(p%y**2 + p%z**2))
+  end if
+end subroutine ${s}$_to_euler_zyx
+
+elemental function ${s}$_slerp(a, b, t) result(r)
+  !! a and b are unit quaternions; t = 0 gives a, t = 1 gives b or -b
+  ${Q}$, intent(in) :: a, b
+  real(${k}$), intent(in) :: t
+  ${Q}$ :: r, c
+  real(${k}$) :: th
+  c = b
+  if (${s}$_dot(a, b) < 0) c = -b
+  th = 2*atan2(${s}$_abs(a - c), ${s}$_abs(a + c))
+  if (th == 0) then
+    r = a
+  else
+    r = (sin((1 - t)*th)*a + sin(t*th)*c)/sin(th)
+  end if
+end function ${s}$_slerp
+
+!-----------------------------------------------------------------------
+! Text
+!-----------------------------------------------------------------------
+
+pure function ${s}$_to_string(q, fmt) result(str)
+  ${Q}$, intent(in) :: q
+  character(*), intent(in), optional :: fmt
+  character(:), allocatable :: str, f
+  f = '(g0)'
+  if (present(fmt)) f = fmt
+  str = num(q%w) // sgn(q%x) // num(abs(q%x)) // 'i' // sgn(q%y) // num(abs(q%y)) // 'j' &
+      & // sgn(q%z) // num(abs(q%z)) // 'k'
+contains
+  pure function num(v) result(s)
+    real(${k}$), intent(in) :: v
+    character(:), allocatable :: s
+    character(128) :: buf
+    write(buf, f) v
+    s = trim(adjustl(buf))
+  end function num
+  pure function sgn(v) result(s)
+    real(${k}$), intent(in) :: v
+    character(3) :: s
+    s = ' + '
+    if (sign(1._${k}$, v) < 0) s = ' - '
+  end function sgn
+end function ${s}$_to_string
+
+subroutine write_${s}$(dtv, unit, iotype, v_list, iostat, iomsg)
+  !! List-directed: a blank, then g0 parts.  DT"F8.4" or DT"F"(8,4): that edit descriptor for each part.
+  class(quat_${s}$), intent(in) :: dtv
+  integer, intent(in) :: unit
+  character(*), intent(in) :: iotype
+  integer, intent(in) :: v_list(:)
+  integer, intent(out) :: iostat
+  character(*), intent(inout) :: iomsg
+  character(:), allocatable :: f, lead
+  lead = ''
+  if (iotype == 'LISTDIRECTED' .or. iotype == 'NAMELIST') then
+    f = 'g0'
+    lead = ' '
+  else
+    f = iotype(3:)
+    if (size(v_list) > 0) then
+      if (f == '') f = 'g'
+      f = f // itoa(v_list(1))
+      if (size(v_list) > 1) f = f // '.' // itoa(v_list(2))
+    else if (f == '') then
+      f = 'g0'
+    end if
+  end if
+  ! Build the text before writing: nvfortran fails on I/O inside an output list
+  f = lead // ${s}$_to_string(dtv, '(' // f // ')')
+  write(unit, '(a)', iostat=iostat, iomsg=iomsg) f
+end subroutine write_${s}$
+
+subroutine read_${s}$(dtv, unit, iotype, v_list, iostat, iomsg)
+  !! Reads characters up to and including the k part, e.g. "1 + 2i + 3j + 4k"
+  !! or "1+2i+3j+4k", within one record of an external file.  Edit descriptors
+  !! are ignored.  Reading stops at the k so the record end is never reached.
+  !! Character variables are not supported as files; use quat_${s}$(string).
+  class(quat_${s}$), intent(inout) :: dtv
+  integer, intent(in) :: unit
+  character(*), intent(in) :: iotype
+  integer, intent(in) :: v_list(:)
+  integer, intent(out) :: iostat
+  character(*), intent(inout) :: iomsg
+  character :: ch
+  character(:), allocatable :: text
+  ${Q}$ :: q
+  associate(unused => iotype, unused2 => v_list); end associate
+  text = ''
+  do
+    read(unit, '(a)', advance='no', iostat=iostat, iomsg=iomsg) ch
+    if (is_iostat_eor(iostat)) then
+      iostat = 1
+      iomsg = 'quaternion text must end with its k part: ' // text
+      return
+    end if
+    if (iostat /= 0) then
+      if (len(text) == 0) iomsg = trim(iomsg) // ' (to parse a string, use quat_${s}$(string))'
+      return
+    end if
+    if (len(text) == 0 .and. (ch == ' ' .or. ch == ',')) cycle
+    text = text // ch
+    if (ch == 'k' .or. ch == 'K') exit
+  end do
+  call ${s}$_parse(text, q, iostat)
+  if (iostat /= 0) then
+    iomsg = 'not a quaternion: ' // text
+    return
+  end if
+  dtv%w = q%w; dtv%x = q%x; dtv%y = q%y; dtv%z = q%z
+end subroutine read_${s}$
+$:END(g)
+
+#:endfor
+end module quaternions_impl
+
+
+module quaternions
+!! Quaternions that behave like Fortran's intrinsic `complex` type.
+!! See llms.txt or the online documentation for the API.
+  use quaternions_impl
+  implicit none
+  ! Everything public in quaternions_impl is re-exported.
+#ifdef __NVCOMPILER
+  ! nvfortran resolves type-bound derived-type I/O for only one type per
+  ! scope, and cannot name write(formatted) in a PUBLIC statement, so the
+  ! I/O generics are declared here, in a module that is public by default.
+#:for s, k, g in KINDS
+$:BEGIN(g)
+  private :: write_${s}$, read_${s}$
+  interface write(formatted)
+    module procedure :: write_${s}$
+  end interface
+  interface read(formatted)
+    module procedure :: read_${s}$
+  end interface
+$:END(g)
+#:endfor
+#endif
+end module quaternions

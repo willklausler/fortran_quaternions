@@ -1,0 +1,114 @@
+.TH QUATERNIONS 3 "2026-10-10" "fortran_quaternions 0.1.0" "Fortran Library Functions"
+.SH NAME
+quaternions \- quaternions that behave like the Fortran complex type, with 3D rotations
+.SH SYNOPSIS
+.nf
+.B use quaternions
+.B type(quat_sp) | type(quat_dp) | type(quat_qp) :: q
+.fi
+.SH DESCRIPTION
+Module
+.B quaternions
+provides quaternion types with real32, real64 and real128 components
+.IR w ,
+.IR x ,
+.IR y ,
+.I z
+(public, scalar first), representing w + xi + yj + zk.
+.B quat_qp
+exists only if the logical constant
+.B quaternions_has_qp
+is true.
+.PP
+Construct with
+.BR quat_dp ( w ", " x ", " y ", " z )
+(trailing parts default to 0), from an array
+.BR quat_dp ( [w,x,y,z] ),
+from a string such as
+.BR quat_dp ( \(dq1\ +\ 2i\ -\ 3j\ +\ k\(dq ),
+or from another kind.
+Assignment from an integer of any kind or a real of the same kind sets
+.IR w .
+.SS Operators
+.B + \- * / ** == /=
+between quaternions, reals of the same kind and integers of any kind.
+Multiplication is the Hamilton product (ij = k).
+.I a/b
+is
+.IR a *inv( b ).
+Integer powers use repeated squaring.
+.B ==
+is exact.
+.SS Functions
+All elemental except
+.BR aimag ,
+.BR to_string ,
+and the rotation procedures with array arguments.
+.TP
+.BR abs ", " conjg ", " real ", " aimag ", " dot_product ", " inv ", " normalize
+Norm, conjugate, scalar part w, vector part [x,y,z], 4D dot product,
+inverse, unit quaternion.
+.TP
+.BR sqrt ", " exp ", " log ", " log10 ", " sin ", " cos ", " tan ", " asin ", " acos ", " atan
+.TQ
+.BR sinh ", " cosh ", " tanh ", " asinh ", " acosh ", " atanh
+Principal branches as for complex arguments; on the real axis the vector
+direction is i.
+.TP
+.BR is_close ( a ", " b " [, " rel_tol "] [, " abs_tol ])
+True if |a\-b| <= max(rel_tol*max(|a|,|b|), abs_tol);
+defaults rel_tol = sqrt(epsilon), abs_tol = 0.
+.TP
+.BR to_string ( q " [, " fmt ])
+Text "w + xi + yj + zk", each part written with
+.I fmt
+(default "(g0)").
+.TP
+.BR "call random_number" ( q )
+Each component uniform in [0, 1).
+.TP
+.BR "call random_rotation" ( q )
+Unit quaternion uniformly distributed over rotations.
+.SS Rotations
+Rotations are active: the vector turns.
+.TP
+.BR from_axis_angle ( axis ", " angle "), " "call to_axis_angle" ( q ", " axis ", " angle )
+Axis need not be unit; angle in radians, returned in [0, pi].
+.TP
+.BR rotate ( q ", " v )
+Returns q v inv(q) for a 3-vector v.
+.TP
+.BR to_matrix ( q "), " from_matrix ( m )
+3x3 rotation matrix R with matmul(R, v) = rotate(q, v), and back (w >= 0).
+.TP
+.BR from_euler_zyx ( yaw ", " pitch ", " roll "), " "call to_euler_zyx" ( q ", " yaw ", " pitch ", " roll )
+Rz(yaw) Ry(pitch) Rx(roll); roll = 0 at gimbal lock.
+.TP
+.BR slerp ( a ", " b ", " t )
+Spherical linear interpolation along the shorter arc.
+.SS Input and output
+.B print *, q
+writes "w + xi + yj + zk".
+.B write(u, \(aq(dt\(dqf8.4\(dq)\(aq) q
+uses the given edit descriptor for each part.
+.B read(u, *) q
+reads text up to and including the k part from one record of an external file.
+.SH NOTES
+Invalid operations return IEEE NaN or Inf; parsing failures return NaN
+components or a positive iostat. No procedure stops the program.
+.PP
+Quadruple precision is compiled if the preprocessor macro QUATERNIONS_QP is 1;
+it defaults to 0 for nvfortran and for gfortran on Apple Silicon.
+.SH EXAMPLE
+.nf
+use, intrinsic :: iso_fortran_env, only: dp => real64
+use quaternions
+type(quat_dp) :: q
+q = from_axis_angle([0._dp, 0._dp, 1._dp], acos(-1._dp)/2)
+print *, rotate(q, [1._dp, 0._dp, 0._dp])   ! [0, 1, 0]
+.fi
+.SH SEE ALSO
+The complete reference is llms.txt in the source distribution and
+https://willklausler.github.io/fortran_quaternions/
+.SH AUTHOR
+Will Klausler
