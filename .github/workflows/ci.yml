@@ -33,7 +33,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Remove GNU link, which shadows the MSVC linker that ifx calls
         if: runner.os == 'Windows' && matrix.compiler == 'intel'
-        run: Remove-Item "C:\Program Files\Git\usr\bin\link.exe"
+        run: |
+          Get-Command link -All | Format-Table -AutoSize Source
+          Get-Command link -All | Where-Object { $_.Source -notmatch 'Microsoft Visual Studio' } | ForEach-Object { Remove-Item $_.Source }
       - name: Let fpm find libgfortran
         # The fpm binary for macOS is linked against a gcc version the runner lacks
         if: runner.os == 'macOS'
