@@ -88,12 +88,13 @@ E = elemental. Kind of the result = kind of the argument.
 
 ## Precision (quat_qp)
 
-`quat_qp` and all its procedures are compiled when the C preprocessor macro `QUATERNIONS_QP` is 1. If it is not defined, it defaults to 0 for nvfortran (`__NVCOMPILER`, `__PGI`) and gfortran on Apple Silicon (`__APPLE__` and `__aarch64__`), else 1. Override with `-DQUATERNIONS_QP=0` or `1`. `logical, parameter :: quaternions_has_qp` tells your code at compile time (as a constant) whether it is available; guard declarations of `quat_qp` in your own code with `#if` and the same condition.
+`quat_qp` and all its procedures are compiled when the C preprocessor macro `QUATERNIONS_QP` is 1. If it is not defined, it defaults to 0 for nvfortran (`__NVCOMPILER`, `__PGI`), LLVM flang (`__flang__`) and gfortran on Apple Silicon (`__APPLE__` and `__aarch64__`), else 1. Override with `-DQUATERNIONS_QP=0` or `1`. `logical, parameter :: quaternions_has_qp` tells your code at compile time (as a constant) whether it is available; guard declarations of `quat_qp` in your own code with `#if` and the same condition.
 
 ## Compiler notes
 
 Tested in CI with gfortran (Linux, macOS, Windows), ifx (Linux, Windows), LLVM flang and nvfortran.
-- nvfortran: derived-type I/O on character variables is not supported; `quat_qp` is off. In module `quaternions` the I/O generics are declared outside the types (an nvfortran workaround); with `use quaternions, only: ...` on nvfortran they are not imported, and `print` falls back to writing the four components as plain numbers.
+- nvfortran: derived-type I/O on character variables is not supported; `quat_qp` is off.
+- LLVM flang 21: `real128` is unavailable, so `quat_qp` is off. In module `quaternions` the I/O generics are declared outside the types (an nvfortran workaround); with `use quaternions, only: ...` on nvfortran they are not imported, and `print` falls back to writing the four components as plain numbers.
 - ifx 2026.1: after a derived-type `read` from a record that starts with blanks (which list-directed `write` produces), the NEXT `read` statement on that unit fails (iostat 59). Read such records in one statement, or write them with `'(dt)'`.
 
 ## Differs from

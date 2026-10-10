@@ -63,12 +63,13 @@ have in both profiles, and `tools/check_docs.py` passes.
 ## Compiler quirks that shaped the code
 
 - nvfortran resolves type-bound derived-type I/O for only one type per scope and cannot name `write(formatted)` in `public`: module `quaternions` declares the I/O generics itself under `#ifdef __NVCOMPILER`.
-- nvfortran: no derived-type I/O on character variables, no `real128`, no complex `asinh/acosh/atanh` (computed from `asin/acos/atan`), and no nested I/O in an output list (build the string first).
+- nvfortran and LLVM flang 21 have no `real128` (guard in `tmpl/common.fypp`).
+- nvfortran: no derived-type I/O on character variables, no complex `asinh/acosh/atanh` (computed from `asin/acos/atan`), and no nested I/O in an output list (build the string first).
 - gfortran and ifx misbehave when a derived-type read reaches the end of a record; `read_*` stops at the `k` part.
 - ifx 2026.1: after a derived-type read of a record that starts with blanks, the next `read` statement on the unit fails (iostat 59).
 - libgfortran leaks memory when a derived-type read hits end of record (an error path); the test for it is skipped on gfortran because the debug profile runs LeakSanitizer.
 - ifx writes list-directed derived types without a separator; `write_*` starts list-directed output with a blank.
-- The generated file goes through the C preprocessor: no `/*` in comments.
+- The generated file goes through the C preprocessor (`[preprocess.cpp]` in fpm.toml turns it on everywhere, including ifx on Windows): no `/*` in comments.
 
 ## Commits
 

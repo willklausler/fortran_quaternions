@@ -6,7 +6,7 @@
 ! Quadruple precision (quat_qp) is compiled unless QUATERNIONS_QP=0.
 ! It is switched off by default where real128 is unavailable.
 #ifndef QUATERNIONS_QP
-#if defined(__NVCOMPILER) || defined(__PGI) || (defined(__APPLE__) && defined(__aarch64__))
+#if defined(__NVCOMPILER) || defined(__PGI) || defined(__flang__) || (defined(__APPLE__) && defined(__aarch64__))
 #define QUATERNIONS_QP 0
 #else
 #define QUATERNIONS_QP 1

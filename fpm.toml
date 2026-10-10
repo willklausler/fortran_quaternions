@@ -9,6 +9,11 @@ homepage = "https://github.com/willklausler/fortran_quaternions"
 categories = ["numerical"]
 keywords = ["quaternion", "rotation", "slerp", "complex", "geometry"]
 
+# The generated sources contain #if guards; this turns on each compiler's
+# preprocessor (needed by ifx on Windows, where .F90 is not special).
+[preprocess]
+[preprocess.cpp]
+
 [features]
 debug.gfortran.flags = "-g -Wall -fbacktrace -fcheck=all -Wextra -Wpedantic -Wuninitialized -Wmaybe-uninitialized -Wimplicit-interface -Wimplicit-procedure -Warray-temporaries -Wrealloc-lhs -finit-real=snan -finit-integer=-2147483648 -finit-logical=true -fstack-protector-all"
 debug.gfortran.linux.flags = "-fsanitize=address,undefined"
@@ -18,7 +23,7 @@ debug.ifx.windows.flags = "/Zi /check:all /warn:all /traceback /fpe:0 /Qinit:sna
 debug.nvfortran.flags = "-g -Minform=inform -Mbounds -Mchkstk -Mstandard -Ktrap=fp -traceback"
 debug.flang.flags = "-g"
 
-release.gfortran.flags = "-O3 -fbacktrace -march=native -funroll-loops -flto"
+release.gfortran.flags = "-O3 -fbacktrace -march=native -funroll-loops"
 release.ifx.linux.flags = "-O3 -xHost -unroll"
 release.ifx.windows.flags = "/O3 /QxHost /Qunroll"
 release.nvfortran.flags = "-Mrecursive -fast"

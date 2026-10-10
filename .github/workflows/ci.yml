@@ -31,6 +31,10 @@ jobs:
         with:
           fpm-version: v0.13.0
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Let fpm find libgfortran
+        # The fpm binary for macOS is linked against a gcc version the runner lacks
+        if: runner.os == 'macOS'
+        run: echo "DYLD_FALLBACK_LIBRARY_PATH=$(dirname "$(gfortran -print-file-name=libgfortran.5.dylib)")" >> "$GITHUB_ENV"
       - name: Test (debug)
         run: fpm test --compiler ${{ steps.setup-fortran.outputs.fc }} --profile debug
       - name: Test (release)
