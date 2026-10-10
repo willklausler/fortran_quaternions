@@ -35,11 +35,19 @@ end subroutine check
 #:for s, k, g in KINDS
 #:set Q = 'quat_' + s
 $:BEGIN(g)
+! Explicit-shape dummies: nvfortran 26.1 passes bad descriptors for
+! array-valued expressions given to assumed-shape dummies.
 logical function vclose_${s}$(a, b, tol) result(c)
-  !! Arrays equal within tol, relative to max(1, |b|)
-  real(${k}$), intent(in) :: a(:), b(:), tol
+  !! 3-vectors equal within tol, relative to max(1, |b|)
+  real(${k}$), intent(in) :: a(3), b(3), tol
   c = all(abs(a - b) <= tol*max(1._${k}$, maxval(abs(b))))
 end function vclose_${s}$
+
+logical function mclose_${s}$(a, b, tol) result(c)
+  !! 3x3 matrices equal within tol, relative to max(1, |b|)
+  real(${k}$), intent(in) :: a(3,3), b(3,3), tol
+  c = all(abs(a - b) <= tol*max(1._${k}$, maxval(abs(b))))
+end function mclose_${s}$
 
 logical function all_nan_${s}$(q) result(c)
   type(${Q}$), intent(in) :: q
@@ -153,8 +161,7 @@ $:END(g2)
   q = ${Q}$(0.3_${k}$, -0.7_${k}$)
 #:for f in FUNCS_C
   r = ${f}$(q)
-  call check(vclose_${s}$([r%w, r%x, r%y, r%z], [real(${f}$(z)), aimag(${f}$(z)), 0._${k}$, 0._${k}$], tol), &
-    & pre // '${f}$ matches complex')
+  call check(is_close(r, ${Q}$(real(${f}$(z)), aimag(${f}$(z))), tol, tol), pre // '${f}$ matches complex')
 #:endfor
   q = ${Q}$(0.3_${k}$, 0.2_${k}$, -0.4_${k}$, 0.5_${k}$)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
@@ -203,7 +210,7 @@ $:END(g2)
     call check(vclose_${s}$(rotate(q, v), [r%x, r%y, r%z], tol), pre // 'rotate = q v q*')
     m = to_matrix(q)
     call check(vclose_${s}$(matmul(m, v), rotate(q, v), tol), pre // 'to_matrix matches rotate')
-    call check(vclose_${s}$(reshape(matmul(transpose(m), m), [9]), reshape(to_matrix(one), [9]), tol), &
+    call check(mclose_${s}$(matmul(transpose(m), m), to_matrix(one), tol), &
       & pre // 'to_matrix orthogonal')
     if (q%w < 0) q = -q
     call check(is_close(from_matrix(m), q, tol), pre // 'from_matrix round trip')
@@ -215,13 +222,13 @@ $:END(g2)
   do n = 1, 4
     axis = [real(${k}$) :: merge(1, 0, n == 1 .or. n == 4), merge(1, 0, n == 2 .or. n == 4), merge(1, 0, n >= 3)]
     m = to_matrix(from_axis_angle(axis, pi))
-    call check(vclose_${s}$(reshape(to_matrix(from_matrix(m)), [9]), reshape(m, [9]), tol), pre // 'from_matrix half turn')
+    call check(mclose_${s}$(to_matrix(from_matrix(m)), m, tol), pre // 'from_matrix half turn')
   end do
   ! Gimbal lock: the rotation survives even though yaw and roll are not unique
   q = from_euler_zyx(0.3_${k}$, pi/2, 0.2_${k}$)
   call to_euler_zyx(q, yaw, pitch, roll)
   call check(abs(pitch - pi/2) <= ltol, pre // 'gimbal pitch')
-  call check(vclose_${s}$(reshape(to_matrix(from_euler_zyx(yaw, pitch, roll)), [9]), reshape(to_matrix(q), [9]), ltol), &
+  call check(mclose_${s}$(to_matrix(from_euler_zyx(yaw, pitch, roll)), to_matrix(q), ltol), &
     & pre // 'gimbal rotation')
 
   p = one

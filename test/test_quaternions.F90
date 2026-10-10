@@ -47,11 +47,19 @@ subroutine check(cond, name)
 end subroutine check
 
 
+! Explicit-shape dummies: nvfortran 26.1 passes bad descriptors for
+! array-valued expressions given to assumed-shape dummies.
 logical function vclose_sp(a, b, tol) result(c)
-  !! Arrays equal within tol, relative to max(1, |b|)
-  real(real32), intent(in) :: a(:), b(:), tol
+  !! 3-vectors equal within tol, relative to max(1, |b|)
+  real(real32), intent(in) :: a(3), b(3), tol
   c = all(abs(a - b) <= tol*max(1._real32, maxval(abs(b))))
 end function vclose_sp
+
+logical function mclose_sp(a, b, tol) result(c)
+  !! 3x3 matrices equal within tol, relative to max(1, |b|)
+  real(real32), intent(in) :: a(3,3), b(3,3), tol
+  c = all(abs(a - b) <= tol*max(1._real32, maxval(abs(b))))
+end function mclose_sp
 
 logical function all_nan_sp(q) result(c)
   type(quat_sp), intent(in) :: q
@@ -197,41 +205,29 @@ subroutine test_sp()
   z = cmplx(0.3_real32, -0.7_real32, real32)
   q = quat_sp(0.3_real32, -0.7_real32)
   r = sqrt(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(sqrt(z)), aimag(sqrt(z)), 0._real32, 0._real32], tol), &
-    & pre // 'sqrt matches complex')
+  call check(is_close(r, quat_sp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex')
   r = exp(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(exp(z)), aimag(exp(z)), 0._real32, 0._real32], tol), &
-    & pre // 'exp matches complex')
+  call check(is_close(r, quat_sp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex')
   r = log(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(log(z)), aimag(log(z)), 0._real32, 0._real32], tol), &
-    & pre // 'log matches complex')
+  call check(is_close(r, quat_sp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex')
   r = sin(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(sin(z)), aimag(sin(z)), 0._real32, 0._real32], tol), &
-    & pre // 'sin matches complex')
+  call check(is_close(r, quat_sp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex')
   r = cos(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(cos(z)), aimag(cos(z)), 0._real32, 0._real32], tol), &
-    & pre // 'cos matches complex')
+  call check(is_close(r, quat_sp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex')
   r = tan(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(tan(z)), aimag(tan(z)), 0._real32, 0._real32], tol), &
-    & pre // 'tan matches complex')
+  call check(is_close(r, quat_sp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex')
   r = asin(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(asin(z)), aimag(asin(z)), 0._real32, 0._real32], tol), &
-    & pre // 'asin matches complex')
+  call check(is_close(r, quat_sp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex')
   r = acos(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(acos(z)), aimag(acos(z)), 0._real32, 0._real32], tol), &
-    & pre // 'acos matches complex')
+  call check(is_close(r, quat_sp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex')
   r = atan(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(atan(z)), aimag(atan(z)), 0._real32, 0._real32], tol), &
-    & pre // 'atan matches complex')
+  call check(is_close(r, quat_sp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex')
   r = sinh(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(sinh(z)), aimag(sinh(z)), 0._real32, 0._real32], tol), &
-    & pre // 'sinh matches complex')
+  call check(is_close(r, quat_sp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex')
   r = cosh(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(cosh(z)), aimag(cosh(z)), 0._real32, 0._real32], tol), &
-    & pre // 'cosh matches complex')
+  call check(is_close(r, quat_sp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
-  call check(vclose_sp([r%w, r%x, r%y, r%z], [real(tanh(z)), aimag(tanh(z)), 0._real32, 0._real32], tol), &
-    & pre // 'tanh matches complex')
+  call check(is_close(r, quat_sp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
   q = quat_sp(0.3_real32, 0.2_real32, -0.4_real32, 0.5_real32)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
@@ -280,7 +276,7 @@ subroutine test_sp()
     call check(vclose_sp(rotate(q, v), [r%x, r%y, r%z], tol), pre // 'rotate = q v q*')
     m = to_matrix(q)
     call check(vclose_sp(matmul(m, v), rotate(q, v), tol), pre // 'to_matrix matches rotate')
-    call check(vclose_sp(reshape(matmul(transpose(m), m), [9]), reshape(to_matrix(one), [9]), tol), &
+    call check(mclose_sp(matmul(transpose(m), m), to_matrix(one), tol), &
       & pre // 'to_matrix orthogonal')
     if (q%w < 0) q = -q
     call check(is_close(from_matrix(m), q, tol), pre // 'from_matrix round trip')
@@ -292,13 +288,13 @@ subroutine test_sp()
   do n = 1, 4
     axis = [real(real32) :: merge(1, 0, n == 1 .or. n == 4), merge(1, 0, n == 2 .or. n == 4), merge(1, 0, n >= 3)]
     m = to_matrix(from_axis_angle(axis, pi))
-    call check(vclose_sp(reshape(to_matrix(from_matrix(m)), [9]), reshape(m, [9]), tol), pre // 'from_matrix half turn')
+    call check(mclose_sp(to_matrix(from_matrix(m)), m, tol), pre // 'from_matrix half turn')
   end do
   ! Gimbal lock: the rotation survives even though yaw and roll are not unique
   q = from_euler_zyx(0.3_real32, pi/2, 0.2_real32)
   call to_euler_zyx(q, yaw, pitch, roll)
   call check(abs(pitch - pi/2) <= ltol, pre // 'gimbal pitch')
-  call check(vclose_sp(reshape(to_matrix(from_euler_zyx(yaw, pitch, roll)), [9]), reshape(to_matrix(q), [9]), ltol), &
+  call check(mclose_sp(to_matrix(from_euler_zyx(yaw, pitch, roll)), to_matrix(q), ltol), &
     & pre // 'gimbal rotation')
 
   p = one
@@ -365,11 +361,19 @@ end subroutine test_sp
 
 
 
+! Explicit-shape dummies: nvfortran 26.1 passes bad descriptors for
+! array-valued expressions given to assumed-shape dummies.
 logical function vclose_dp(a, b, tol) result(c)
-  !! Arrays equal within tol, relative to max(1, |b|)
-  real(real64), intent(in) :: a(:), b(:), tol
+  !! 3-vectors equal within tol, relative to max(1, |b|)
+  real(real64), intent(in) :: a(3), b(3), tol
   c = all(abs(a - b) <= tol*max(1._real64, maxval(abs(b))))
 end function vclose_dp
+
+logical function mclose_dp(a, b, tol) result(c)
+  !! 3x3 matrices equal within tol, relative to max(1, |b|)
+  real(real64), intent(in) :: a(3,3), b(3,3), tol
+  c = all(abs(a - b) <= tol*max(1._real64, maxval(abs(b))))
+end function mclose_dp
 
 logical function all_nan_dp(q) result(c)
   type(quat_dp), intent(in) :: q
@@ -515,41 +519,29 @@ subroutine test_dp()
   z = cmplx(0.3_real64, -0.7_real64, real64)
   q = quat_dp(0.3_real64, -0.7_real64)
   r = sqrt(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(sqrt(z)), aimag(sqrt(z)), 0._real64, 0._real64], tol), &
-    & pre // 'sqrt matches complex')
+  call check(is_close(r, quat_dp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex')
   r = exp(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(exp(z)), aimag(exp(z)), 0._real64, 0._real64], tol), &
-    & pre // 'exp matches complex')
+  call check(is_close(r, quat_dp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex')
   r = log(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(log(z)), aimag(log(z)), 0._real64, 0._real64], tol), &
-    & pre // 'log matches complex')
+  call check(is_close(r, quat_dp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex')
   r = sin(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(sin(z)), aimag(sin(z)), 0._real64, 0._real64], tol), &
-    & pre // 'sin matches complex')
+  call check(is_close(r, quat_dp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex')
   r = cos(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(cos(z)), aimag(cos(z)), 0._real64, 0._real64], tol), &
-    & pre // 'cos matches complex')
+  call check(is_close(r, quat_dp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex')
   r = tan(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(tan(z)), aimag(tan(z)), 0._real64, 0._real64], tol), &
-    & pre // 'tan matches complex')
+  call check(is_close(r, quat_dp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex')
   r = asin(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(asin(z)), aimag(asin(z)), 0._real64, 0._real64], tol), &
-    & pre // 'asin matches complex')
+  call check(is_close(r, quat_dp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex')
   r = acos(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(acos(z)), aimag(acos(z)), 0._real64, 0._real64], tol), &
-    & pre // 'acos matches complex')
+  call check(is_close(r, quat_dp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex')
   r = atan(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(atan(z)), aimag(atan(z)), 0._real64, 0._real64], tol), &
-    & pre // 'atan matches complex')
+  call check(is_close(r, quat_dp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex')
   r = sinh(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(sinh(z)), aimag(sinh(z)), 0._real64, 0._real64], tol), &
-    & pre // 'sinh matches complex')
+  call check(is_close(r, quat_dp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex')
   r = cosh(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(cosh(z)), aimag(cosh(z)), 0._real64, 0._real64], tol), &
-    & pre // 'cosh matches complex')
+  call check(is_close(r, quat_dp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
-  call check(vclose_dp([r%w, r%x, r%y, r%z], [real(tanh(z)), aimag(tanh(z)), 0._real64, 0._real64], tol), &
-    & pre // 'tanh matches complex')
+  call check(is_close(r, quat_dp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
   q = quat_dp(0.3_real64, 0.2_real64, -0.4_real64, 0.5_real64)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
@@ -598,7 +590,7 @@ subroutine test_dp()
     call check(vclose_dp(rotate(q, v), [r%x, r%y, r%z], tol), pre // 'rotate = q v q*')
     m = to_matrix(q)
     call check(vclose_dp(matmul(m, v), rotate(q, v), tol), pre // 'to_matrix matches rotate')
-    call check(vclose_dp(reshape(matmul(transpose(m), m), [9]), reshape(to_matrix(one), [9]), tol), &
+    call check(mclose_dp(matmul(transpose(m), m), to_matrix(one), tol), &
       & pre // 'to_matrix orthogonal')
     if (q%w < 0) q = -q
     call check(is_close(from_matrix(m), q, tol), pre // 'from_matrix round trip')
@@ -610,13 +602,13 @@ subroutine test_dp()
   do n = 1, 4
     axis = [real(real64) :: merge(1, 0, n == 1 .or. n == 4), merge(1, 0, n == 2 .or. n == 4), merge(1, 0, n >= 3)]
     m = to_matrix(from_axis_angle(axis, pi))
-    call check(vclose_dp(reshape(to_matrix(from_matrix(m)), [9]), reshape(m, [9]), tol), pre // 'from_matrix half turn')
+    call check(mclose_dp(to_matrix(from_matrix(m)), m, tol), pre // 'from_matrix half turn')
   end do
   ! Gimbal lock: the rotation survives even though yaw and roll are not unique
   q = from_euler_zyx(0.3_real64, pi/2, 0.2_real64)
   call to_euler_zyx(q, yaw, pitch, roll)
   call check(abs(pitch - pi/2) <= ltol, pre // 'gimbal pitch')
-  call check(vclose_dp(reshape(to_matrix(from_euler_zyx(yaw, pitch, roll)), [9]), reshape(to_matrix(q), [9]), ltol), &
+  call check(mclose_dp(to_matrix(from_euler_zyx(yaw, pitch, roll)), to_matrix(q), ltol), &
     & pre // 'gimbal rotation')
 
   p = one
@@ -683,11 +675,19 @@ end subroutine test_dp
 
 
 #if QUATERNIONS_QP
+! Explicit-shape dummies: nvfortran 26.1 passes bad descriptors for
+! array-valued expressions given to assumed-shape dummies.
 logical function vclose_qp(a, b, tol) result(c)
-  !! Arrays equal within tol, relative to max(1, |b|)
-  real(real128), intent(in) :: a(:), b(:), tol
+  !! 3-vectors equal within tol, relative to max(1, |b|)
+  real(real128), intent(in) :: a(3), b(3), tol
   c = all(abs(a - b) <= tol*max(1._real128, maxval(abs(b))))
 end function vclose_qp
+
+logical function mclose_qp(a, b, tol) result(c)
+  !! 3x3 matrices equal within tol, relative to max(1, |b|)
+  real(real128), intent(in) :: a(3,3), b(3,3), tol
+  c = all(abs(a - b) <= tol*max(1._real128, maxval(abs(b))))
+end function mclose_qp
 
 logical function all_nan_qp(q) result(c)
   type(quat_qp), intent(in) :: q
@@ -834,41 +834,29 @@ subroutine test_qp()
   z = cmplx(0.3_real128, -0.7_real128, real128)
   q = quat_qp(0.3_real128, -0.7_real128)
   r = sqrt(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(sqrt(z)), aimag(sqrt(z)), 0._real128, 0._real128], tol), &
-    & pre // 'sqrt matches complex')
+  call check(is_close(r, quat_qp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex')
   r = exp(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(exp(z)), aimag(exp(z)), 0._real128, 0._real128], tol), &
-    & pre // 'exp matches complex')
+  call check(is_close(r, quat_qp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex')
   r = log(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(log(z)), aimag(log(z)), 0._real128, 0._real128], tol), &
-    & pre // 'log matches complex')
+  call check(is_close(r, quat_qp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex')
   r = sin(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(sin(z)), aimag(sin(z)), 0._real128, 0._real128], tol), &
-    & pre // 'sin matches complex')
+  call check(is_close(r, quat_qp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex')
   r = cos(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(cos(z)), aimag(cos(z)), 0._real128, 0._real128], tol), &
-    & pre // 'cos matches complex')
+  call check(is_close(r, quat_qp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex')
   r = tan(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(tan(z)), aimag(tan(z)), 0._real128, 0._real128], tol), &
-    & pre // 'tan matches complex')
+  call check(is_close(r, quat_qp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex')
   r = asin(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(asin(z)), aimag(asin(z)), 0._real128, 0._real128], tol), &
-    & pre // 'asin matches complex')
+  call check(is_close(r, quat_qp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex')
   r = acos(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(acos(z)), aimag(acos(z)), 0._real128, 0._real128], tol), &
-    & pre // 'acos matches complex')
+  call check(is_close(r, quat_qp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex')
   r = atan(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(atan(z)), aimag(atan(z)), 0._real128, 0._real128], tol), &
-    & pre // 'atan matches complex')
+  call check(is_close(r, quat_qp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex')
   r = sinh(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(sinh(z)), aimag(sinh(z)), 0._real128, 0._real128], tol), &
-    & pre // 'sinh matches complex')
+  call check(is_close(r, quat_qp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex')
   r = cosh(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(cosh(z)), aimag(cosh(z)), 0._real128, 0._real128], tol), &
-    & pre // 'cosh matches complex')
+  call check(is_close(r, quat_qp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
-  call check(vclose_qp([r%w, r%x, r%y, r%z], [real(tanh(z)), aimag(tanh(z)), 0._real128, 0._real128], tol), &
-    & pre // 'tanh matches complex')
+  call check(is_close(r, quat_qp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
   q = quat_qp(0.3_real128, 0.2_real128, -0.4_real128, 0.5_real128)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
@@ -917,7 +905,7 @@ subroutine test_qp()
     call check(vclose_qp(rotate(q, v), [r%x, r%y, r%z], tol), pre // 'rotate = q v q*')
     m = to_matrix(q)
     call check(vclose_qp(matmul(m, v), rotate(q, v), tol), pre // 'to_matrix matches rotate')
-    call check(vclose_qp(reshape(matmul(transpose(m), m), [9]), reshape(to_matrix(one), [9]), tol), &
+    call check(mclose_qp(matmul(transpose(m), m), to_matrix(one), tol), &
       & pre // 'to_matrix orthogonal')
     if (q%w < 0) q = -q
     call check(is_close(from_matrix(m), q, tol), pre // 'from_matrix round trip')
@@ -929,13 +917,13 @@ subroutine test_qp()
   do n = 1, 4
     axis = [real(real128) :: merge(1, 0, n == 1 .or. n == 4), merge(1, 0, n == 2 .or. n == 4), merge(1, 0, n >= 3)]
     m = to_matrix(from_axis_angle(axis, pi))
-    call check(vclose_qp(reshape(to_matrix(from_matrix(m)), [9]), reshape(m, [9]), tol), pre // 'from_matrix half turn')
+    call check(mclose_qp(to_matrix(from_matrix(m)), m, tol), pre // 'from_matrix half turn')
   end do
   ! Gimbal lock: the rotation survives even though yaw and roll are not unique
   q = from_euler_zyx(0.3_real128, pi/2, 0.2_real128)
   call to_euler_zyx(q, yaw, pitch, roll)
   call check(abs(pitch - pi/2) <= ltol, pre // 'gimbal pitch')
-  call check(vclose_qp(reshape(to_matrix(from_euler_zyx(yaw, pitch, roll)), [9]), reshape(to_matrix(q), [9]), ltol), &
+  call check(mclose_qp(to_matrix(from_euler_zyx(yaw, pitch, roll)), to_matrix(q), ltol), &
     & pre // 'gimbal rotation')
 
   p = one

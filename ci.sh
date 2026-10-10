@@ -1,9 +1,11 @@
 #!/bin/bash
-# Local multi-compiler check: tests in both profiles with every compiler
-# found on PATH, then the generated-file and documentation checks.
-# GitHub Actions (.github/workflows/ci.yml) covers more platforms.
+# Local multi-compiler check: regenerate from tmpl/, then test in both
+# profiles with every compiler found on PATH, then check llms.txt.
+# GitHub Actions (.github/workflows/ci.yml) covers more platforms and also
+# checks that the committed generated files match the templates.
 
 source /opt/intel/oneapi/setvars.sh > /dev/null 2>&1
+make generate > /dev/null || exit 1
 FAILED=()
 
 for FC in gfortran ifx nvfortran flang flang-new; do
@@ -18,7 +20,6 @@ for FC in gfortran ifx nvfortran flang flang-new; do
     done
 done
 
-make check-generated > /dev/null || FAILED+=("generated files differ from tmpl/ (run make generate)")
 python3 tools/check_docs.py || FAILED+=("llms.txt")
 
 if [ ${#FAILED[@]} -eq 0 ]; then

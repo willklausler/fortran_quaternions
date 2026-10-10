@@ -59,6 +59,7 @@ have in both profiles, and `tools/check_docs.py` passes.
 - Debug profiles trap floating-point exceptions (ifx `-fpe0`, nvfortran `-Ktrap=fp`): tests must not create NaN or Inf through arithmetic, nor compare NaN with `<`. Use `ieee_value` and `ieee_is_nan`.
 - Use tolerances relative to `epsilon` of the kind (`tol = 64*eps`); `-O3` changes the last bits.
 - One `read` statement per scratch file (ifx bug, see below).
+- Compare arrays with the explicit-shape helpers `vclose_*` and `mclose_*`: nvfortran 26.1 corrupts array-valued expressions passed to assumed-shape dummies.
 
 ## Compiler quirks that shaped the code
 
