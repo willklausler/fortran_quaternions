@@ -51,7 +51,7 @@ make install PREFIX=$HOME/.local    # library, .mod files and man page
 ```
 
 Quadruple precision is switched off automatically where the compiler lacks it
-(nvfortran, LLVM flang, gfortran on Apple Silicon); force it with `-DQUATERNIONS_QP=0` or `1`.
+(nvfortran, LLVM flang); force it with `-DQUATERNIONS_QP=0` or `1`.
 
 ## Documentation
 

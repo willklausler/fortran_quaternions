@@ -88,7 +88,7 @@ E = elemental. Kind of the result = kind of the argument.
 
 ## Precision (quat_qp)
 
-`quat_qp` and all its procedures are compiled when the C preprocessor macro `QUATERNIONS_QP` is 1. If it is not defined, it defaults to 0 for nvfortran (`__NVCOMPILER`, `__PGI`), LLVM flang (`__flang__`) and gfortran on Apple Silicon (`__APPLE__` and `__aarch64__`), else 1. Override with `-DQUATERNIONS_QP=0` or `1`. `logical, parameter :: quaternions_has_qp` tells your code at compile time (as a constant) whether it is available; guard declarations of `quat_qp` in your own code with `#if` and the same condition.
+`quat_qp` and all its procedures are compiled when the C preprocessor macro `QUATERNIONS_QP` is 1. If it is not defined, it defaults to 0 for nvfortran (`__NVCOMPILER`, `__PGI`) and LLVM flang (`__flang__`), else 1. Override with `-DQUATERNIONS_QP=0` or `1`. `logical, parameter :: quaternions_has_qp` tells your code at compile time (as a constant) whether it is available; guard declarations of `quat_qp` in your own code with `#if` and the same condition.
 
 ## Compiler notes
 

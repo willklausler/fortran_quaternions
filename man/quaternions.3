@@ -98,7 +98,7 @@ Invalid operations return IEEE NaN or Inf; parsing failures return NaN
 components or a positive iostat. No procedure stops the program.
 .PP
 Quadruple precision is compiled if the preprocessor macro QUATERNIONS_QP is 1;
-it defaults to 0 for nvfortran, LLVM flang and gfortran on Apple Silicon.
+it defaults to 0 for nvfortran and LLVM flang.
 .SH EXAMPLE
 .nf
 use, intrinsic :: iso_fortran_env, only: dp => real64
