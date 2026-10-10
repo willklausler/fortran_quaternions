@@ -31,9 +31,9 @@ jobs:
         with:
           fpm-version: v0.13.0
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Put MSVC link.exe ahead of GNU link from Git for Windows
+      - name: Remove GNU link, which shadows the MSVC linker that ifx calls
         if: runner.os == 'Windows' && matrix.compiler == 'intel'
-        uses: ilammy/msvc-dev-cmd@v1
+        run: Remove-Item "C:\Program Files\Git\usr\bin\link.exe"
       - name: Let fpm find libgfortran
         # The fpm binary for macOS is linked against a gcc version the runner lacks
         if: runner.os == 'macOS'
