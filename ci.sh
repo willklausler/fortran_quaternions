@@ -1,6 +1,7 @@
 #!/bin/bash
 # Local multi-compiler check: regenerate from tmpl/, then test in both
-# profiles with every compiler found on PATH, then check llms.txt.
+# profiles with every compiler found on PATH, run the examples and the app,
+# then check llms.txt.
 # GitHub Actions (.github/workflows/ci.yml) covers more platforms and also
 # checks that the committed generated files match the templates.
 
@@ -12,7 +13,9 @@ for FC in gfortran ifx nvfortran flang flang-new; do
     command -v "$FC" > /dev/null || continue
     for PROFILE in debug release; do
         echo "--- $FC $PROFILE"
-        if fpm test --compiler "$FC" --profile "$PROFILE" && fpm run --compiler "$FC" --profile "$PROFILE" --example --all > /dev/null; then
+        if fpm test --compiler "$FC" --profile "$PROFILE" \
+            && fpm run --compiler "$FC" --profile "$PROFILE" --example --all > /dev/null \
+            && fpm run --compiler "$FC" --profile "$PROFILE" > /dev/null; then
             echo "✅ $FC $PROFILE"
         else
             FAILED+=("$FC $PROFILE")
