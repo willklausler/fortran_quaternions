@@ -2,9 +2,18 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "fortran_quaternions: quaternions that behave like Fortran's complex type"
 type: software
+abstract: >-
+  fortran_quaternions is a Fortran module, quaternions, with the quaternion
+  types quat_sp, quat_dp and quat_qp (real32, real64 and real128 components)
+  that behave like the intrinsic complex type: arithmetic with reals and
+  integers, the elementary functions with the same principal branches, exact
+  comparison, and text I/O. It also provides 3D rotations: axis-angle,
+  rotation matrices, ZYX Euler angles, slerp and uniform random rotations.
+  It is pure Fortran 2008 and builds with fpm or make.
 authors:
   - family-names: Klausler
     given-names: Will
+    orcid: "https://orcid.org/0009-0000-4313-3696"
 version: 0.1.0
 date-released: 2026-10-10
 license: MIT
