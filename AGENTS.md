@@ -20,7 +20,7 @@ its conventions are in `llms.txt`; read it before changing behaviour.
 ## Commands
 
 ```sh
-pip install fypp==3.3 ford           # once
+pip install fypp==3.3 ford pcpp      # once; FORD runs pcpp as preprocessor
 make generate                        # tmpl/ -> src/, test/ (after every template edit)
 fpm test --profile debug             # fast check, gfortran
 fpm test --profile release

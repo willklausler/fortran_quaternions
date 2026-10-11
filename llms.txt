@@ -103,7 +103,6 @@ Tested in CI with gfortran (Linux, macOS, Windows), ifx (Linux, Windows), LLVM f
 - Libraries storing [x, y, z, w] (Eigen internal storage, ROS, pdebuyl/fortran_quaternion): here storage and constructors are scalar first, `quat_dp(w, x, y, z)`.
 - JPL convention (ij = -k): not used. Passive rotations (frame turns): use `rotate(conjg(q), v)`.
 - saridut/rotlib: six Euler sequences and subroutine interfaces there; here functions and ZYX only.
-- Old releases of this package (type `quat`, kind `rk`, getters `q%r()`, `q%i()`, fuzzy `==`, `char(q)`): removed.
 
 ## Module layout
 

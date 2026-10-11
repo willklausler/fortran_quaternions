@@ -66,7 +66,8 @@ CI tests every push on:
 
 | Compiler | Linux | macOS | Windows |
 | --- | --- | --- | --- |
-| gfortran 13, 14 | yes | yes | yes |
+| gfortran 14 | yes | yes | yes |
+| gfortran 13 | yes | | |
 | ifx 2026 | yes | | yes |
 | LLVM flang 21 | yes | | |
 | nvfortran 26 | yes | | |
@@ -81,7 +82,8 @@ a type with operators but no rotations ([MarDiehl/quaternions](https://github.co
 rotation conversions without a quaternion type ([saridut/rotlib](https://github.com/saridut/rotlib)), or
 several precisions through parameterized derived types, which several compilers handle poorly
 ([rivwgk/quatf](https://github.com/rivwgk/quatf)). This package combines a `complex`-like
-type, rotations and three precisions, packaged for fpm and tested on five compilers.
+type, rotations and three precisions, packaged for fpm and tested with gfortran, ifx,
+LLVM flang and nvfortran on Linux, macOS and Windows.
 
 ## References
 
