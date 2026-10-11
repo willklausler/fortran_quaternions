@@ -2,15 +2,7 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
-
-### Fixed
-
-- `atanh` and `asinh` returned the wrong side of the branch cut on the real axis: `atanh(quat_dp(2))` gave 0.549 - 1.571i instead of 0.549 + 1.571i, as `atanh((2, 0))` gives.
-- `is_close` returned true for an infinity and any finite value, and false for two equal infinities.
-- `inv` (and division) by a quaternion with an infinite component returned NaN instead of 0.
-
-## [0.1.0] - 2026-10-10
+## [0.1.0] - 2026-10-11
 
 First public release.
 
