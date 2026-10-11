@@ -3,7 +3,7 @@
 > Fortran module `quaternions`: quaternion types `quat_sp`, `quat_dp`, `quat_qp` (real32/real64/real128) that behave like the intrinsic `complex` type, plus 3D rotations. Pure Fortran 2008, fpm or make. This file is the complete API reference for tools and coding agents; it is checked against the source in CI.
 
 Use: `use quaternions` (everything) or `use quaternions, only: quat_dp, ...`.
-fpm dependency: `fortran_quaternions = { git = "https://github.com/willklausler/fortran_quaternions" }`
+fpm dependency: `fortran_quaternions = { git = "https://github.com/willklausler/fortran_quaternions", tag = "v0.1.0" }`
 Kinds are not exported: use `real32`, `real64`, `real128` from `iso_fortran_env`.
 
 ## Conventions (read first)

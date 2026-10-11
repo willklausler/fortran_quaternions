@@ -3,6 +3,7 @@
 [![CI](https://github.com/willklausler/fortran_quaternions/actions/workflows/ci.yml/badge.svg)](https://github.com/willklausler/fortran_quaternions/actions/workflows/ci.yml)
 [![Docs](https://github.com/willklausler/fortran_quaternions/actions/workflows/docs.yml/badge.svg)](https://willklausler.github.io/fortran_quaternions/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23299599.svg)](https://doi.org/10.5281/zenodo.23299599)
 
 Quaternions for modern Fortran that behave like the intrinsic `complex` type,
 with 3D rotations, in single, double and quadruple precision.
@@ -40,7 +41,7 @@ With [fpm](https://fpm.fortran-lang.org) 0.13 or later, add to your `fpm.toml`:
 
 ```toml
 [dependencies]
-fortran_quaternions = { git = "https://github.com/willklausler/fortran_quaternions" }
+fortran_quaternions = { git = "https://github.com/willklausler/fortran_quaternions", tag = "v0.1.0" }
 ```
 
 With make, which builds `build/make/libfortran_quaternions.a` and the module files:
@@ -98,7 +99,8 @@ LLVM flang and nvfortran on Linux, macOS and Windows.
 Version 0.1.0, the first public release. The API may still change before 1.0;
 changes are recorded in [CHANGELOG.md](CHANGELOG.md). Bug reports, questions and
 pull requests are welcome on [GitHub](https://github.com/willklausler/fortran_quaternions/issues);
-see [CONTRIBUTING.md](CONTRIBUTING.md). To cite this package, use [CITATION.cff](CITATION.cff).
+see [CONTRIBUTING.md](CONTRIBUTING.md). To cite this package, use [CITATION.cff](CITATION.cff)
+or the DOI [10.5281/zenodo.23299599](https://doi.org/10.5281/zenodo.23299599), which always points to the latest version.
 
 ## License
 
