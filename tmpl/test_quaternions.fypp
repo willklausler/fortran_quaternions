@@ -6,7 +6,7 @@ program test_quaternions
   !! Unit tests for every public procedure, for each kind.
   !! Avoids NaN/Inf arithmetic so it runs under floating-point trapping.
   use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int8, int16, int32, int64
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_positive_inf
   use quaternions
   implicit none
   integer :: ncheck = 0, nfail = 0
@@ -59,7 +59,7 @@ subroutine test_${s}$()
   real(${k}$), parameter :: tol = 64*eps, ltol = sqrt(eps)
   type(${Q}$), parameter :: one = ${Q}$(1), i = ${Q}$(0, 1), j = ${Q}$(0, 0, 1), k = ${Q}$(0, 0, 0, 1)
   type(${Q}$) :: p, q, r, qs(1000)
-  real(${k}$) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t
+  real(${k}$) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t, inf
   complex(${k}$) :: z
   character(200) :: buf
   integer :: n, u, ios
@@ -139,6 +139,8 @@ $:END(g2)
   call check(is_close(p**${Q}$(2), p*p, 4*tol), pre // 'quaternion power')
   big = 4*sqrt(huge(1._${k}$))
   call check(is_close(inv(${Q}$(big, big)), ${Q}$(1/(2*big), -1/(2*big)), tol), pre // 'inverse without overflow')
+  inf = ieee_value(1._${k}$, ieee_positive_inf)
+  call check(inv(${Q}$(inf, -1)) == ${Q}$(0) .and. one/${Q}$(0, 0, -inf) == ${Q}$(0), pre // 'inverse of infinity is 0')
 
   ! Comparison --------------------------------------------------------
   call check(${Q}$(1 + eps) /= one .and. .not. (${Q}$(1 + eps) == one), pre // '== is exact')
@@ -146,6 +148,8 @@ $:END(g2)
   call check(.not. is_close(one, ${Q}$(1.1_${k}$)), pre // 'is_close rejects')
   call check(is_close(${Q}$(0), ${Q}$(1e-3_${k}$), abs_tol=1e-2_${k}$), pre // 'is_close abs_tol')
   call check(.not. is_close(${Q}$(0), ${Q}$(1e-3_${k}$), rel_tol=0.5_${k}$), pre // 'is_close rel_tol near 0')
+  call check(is_close(${Q}$(inf), ${Q}$(inf)) .and. .not. is_close(${Q}$(inf), one) .and. .not. is_close(one, -${Q}$(inf)), &
+    & pre // 'is_close with infinities')
 
   ! Basic functions ---------------------------------------------------
   p = ${Q}$(1, 2, 3, 4)
@@ -163,6 +167,23 @@ $:END(g2)
   r = ${f}$(q)
   call check(is_close(r, ${Q}$(real(${f}$(z)), aimag(${f}$(z))), tol, tol), pre // '${f}$ matches complex')
 #:endfor
+  ! On the real axis, including the branch cuts, they match complex (x, +0).
+  do n = -2, 2, 4
+    z = cmplx(n, 0, ${k}$)
+    q = ${Q}$(n)
+#:for f in FUNCS_C
+    r = ${f}$(q)
+    call check(is_close(r, ${Q}$(real(${f}$(z)), aimag(${f}$(z))), tol, tol), pre // '${f}$ matches complex on the real axis')
+#:endfor
+  end do
+  ! Closed forms, because nvfortran has no complex asinh, acosh, atanh
+  t = log(2 + sqrt(3._${k}$))
+  call check(is_close(atanh(${Q}$(2)), ${Q}$(log(3._${k}$)/2, pi/2), tol) &
+    & .and. is_close(atanh(${Q}$(-2)), ${Q}$(-log(3._${k}$)/2, pi/2), tol), pre // 'atanh above the branch cut')
+  call check(is_close(acosh(${Q}$(-2)), ${Q}$(t, pi), tol) .and. is_close(acosh(${Q}$(0.5_${k}$)), ${Q}$(0, pi/3), tol), &
+    & pre // 'acosh on the real axis')
+  call check(is_close(asinh(${Q}$(0, 2)), ${Q}$(t, pi/2), tol) .and. is_close(asinh(${Q}$(-0._${k}$, 2)), ${Q}$(-t, pi/2), tol), &
+    & pre // 'asinh on the branch cut')
   q = ${Q}$(0.3_${k}$, 0.2_${k}$, -0.4_${k}$, 0.5_${k}$)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')

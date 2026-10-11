@@ -471,7 +471,7 @@ module quaternions_impl
   end interface normalize
 
   interface is_close
-    !! True if |a-b| <= max(rel_tol*max(|a|,|b|), abs_tol)
+    !! True if a == b or |a-b| <= max(rel_tol*max(|a|,|b|), abs_tol), with |a-b| finite
 
     module procedure :: sp_is_close
 
@@ -1609,6 +1609,11 @@ elemental function sp_inv(q) result(r)
   type(quat_sp) :: r, p
   real(real32) :: sc
   sc = max(abs(q%w), abs(q%x), abs(q%y), abs(q%z))
+  if (sc > huge(sc)) then
+    ! Zero with the signs of conjg(q), as 1/z for a complex infinity (C99 Annex G)
+    r = quat_sp(sign(0._real32, q%w), sign(0._real32, -q%x), sign(0._real32, -q%y), sign(0._real32, -q%z))
+    return
+  end if
   p = q/sc
   r = sp_conjg(p)/(sp_dot(p, p)*sc)
 end function sp_inv
@@ -1623,12 +1628,18 @@ elemental logical function sp_is_close(a, b, rel_tol, abs_tol) result(c)
   !! Defaults: rel_tol = sqrt(epsilon), abs_tol = 0
   type(quat_sp), intent(in) :: a, b
   real(real32), intent(in), optional :: rel_tol, abs_tol
-  real(real32) :: rt, at
+  real(real32) :: rt, at, d
   rt = sqrt(epsilon(1._real32))
   if (present(rel_tol)) rt = rel_tol
   at = 0
   if (present(abs_tol)) at = abs_tol
-  c = sp_abs(a - b) <= max(rt*max(sp_abs(a), sp_abs(b)), at)
+  ! Equal infinities are close; an infinite difference never is.
+  if (a == b) then
+    c = .true.
+  else
+    d = sp_abs(a - b)
+    c = d <= huge(d) .and. d <= max(rt*max(sp_abs(a), sp_abs(b)), at)
+  end if
 end function sp_is_close
 
 !-----------------------------------------------------------------------
@@ -1749,23 +1760,27 @@ end function sp_atanh
 ! Complex inverse hyperbolic functions via the C99 identities, because not
 ! every compiler provides them for complex arguments.
 
+elemental complex(real32) function sp_times_i(c) result(r)
+  !! i*c without arithmetic, which would lose the sign of a zero and so the
+  !! side of a branch cut: (0, 1)*(2, 0) gives (+0, 2), not (-0, 2)
+  complex(real32), intent(in) :: c
+  r = cmplx(-aimag(c), real(c), kind=real32)
+end function sp_times_i
+
 elemental complex(real32) function sp_casinh(c) result(r)
   complex(real32), intent(in) :: c
-  complex(real32), parameter :: i = (0, 1)
-  r = -i*asin(i*c)
+  r = -sp_times_i(asin(sp_times_i(c)))
 end function sp_casinh
 
 elemental complex(real32) function sp_cacosh(c) result(r)
   complex(real32), intent(in) :: c
-  complex(real32), parameter :: i = (0, 1)
-  r = i*acos(c)
+  r = sp_times_i(acos(c))
   if (real(r) < 0) r = -r
 end function sp_cacosh
 
 elemental complex(real32) function sp_catanh(c) result(r)
   complex(real32), intent(in) :: c
-  complex(real32), parameter :: i = (0, 1)
-  r = -i*atan(i*c)
+  r = -sp_times_i(atan(sp_times_i(c)))
 end function sp_catanh
 
 elemental function sp_log10(q) result(r)
@@ -2774,6 +2789,11 @@ elemental function dp_inv(q) result(r)
   type(quat_dp) :: r, p
   real(real64) :: sc
   sc = max(abs(q%w), abs(q%x), abs(q%y), abs(q%z))
+  if (sc > huge(sc)) then
+    ! Zero with the signs of conjg(q), as 1/z for a complex infinity (C99 Annex G)
+    r = quat_dp(sign(0._real64, q%w), sign(0._real64, -q%x), sign(0._real64, -q%y), sign(0._real64, -q%z))
+    return
+  end if
   p = q/sc
   r = dp_conjg(p)/(dp_dot(p, p)*sc)
 end function dp_inv
@@ -2788,12 +2808,18 @@ elemental logical function dp_is_close(a, b, rel_tol, abs_tol) result(c)
   !! Defaults: rel_tol = sqrt(epsilon), abs_tol = 0
   type(quat_dp), intent(in) :: a, b
   real(real64), intent(in), optional :: rel_tol, abs_tol
-  real(real64) :: rt, at
+  real(real64) :: rt, at, d
   rt = sqrt(epsilon(1._real64))
   if (present(rel_tol)) rt = rel_tol
   at = 0
   if (present(abs_tol)) at = abs_tol
-  c = dp_abs(a - b) <= max(rt*max(dp_abs(a), dp_abs(b)), at)
+  ! Equal infinities are close; an infinite difference never is.
+  if (a == b) then
+    c = .true.
+  else
+    d = dp_abs(a - b)
+    c = d <= huge(d) .and. d <= max(rt*max(dp_abs(a), dp_abs(b)), at)
+  end if
 end function dp_is_close
 
 !-----------------------------------------------------------------------
@@ -2914,23 +2940,27 @@ end function dp_atanh
 ! Complex inverse hyperbolic functions via the C99 identities, because not
 ! every compiler provides them for complex arguments.
 
+elemental complex(real64) function dp_times_i(c) result(r)
+  !! i*c without arithmetic, which would lose the sign of a zero and so the
+  !! side of a branch cut: (0, 1)*(2, 0) gives (+0, 2), not (-0, 2)
+  complex(real64), intent(in) :: c
+  r = cmplx(-aimag(c), real(c), kind=real64)
+end function dp_times_i
+
 elemental complex(real64) function dp_casinh(c) result(r)
   complex(real64), intent(in) :: c
-  complex(real64), parameter :: i = (0, 1)
-  r = -i*asin(i*c)
+  r = -dp_times_i(asin(dp_times_i(c)))
 end function dp_casinh
 
 elemental complex(real64) function dp_cacosh(c) result(r)
   complex(real64), intent(in) :: c
-  complex(real64), parameter :: i = (0, 1)
-  r = i*acos(c)
+  r = dp_times_i(acos(c))
   if (real(r) < 0) r = -r
 end function dp_cacosh
 
 elemental complex(real64) function dp_catanh(c) result(r)
   complex(real64), intent(in) :: c
-  complex(real64), parameter :: i = (0, 1)
-  r = -i*atan(i*c)
+  r = -dp_times_i(atan(dp_times_i(c)))
 end function dp_catanh
 
 elemental function dp_log10(q) result(r)
@@ -3939,6 +3969,11 @@ elemental function qp_inv(q) result(r)
   type(quat_qp) :: r, p
   real(real128) :: sc
   sc = max(abs(q%w), abs(q%x), abs(q%y), abs(q%z))
+  if (sc > huge(sc)) then
+    ! Zero with the signs of conjg(q), as 1/z for a complex infinity (C99 Annex G)
+    r = quat_qp(sign(0._real128, q%w), sign(0._real128, -q%x), sign(0._real128, -q%y), sign(0._real128, -q%z))
+    return
+  end if
   p = q/sc
   r = qp_conjg(p)/(qp_dot(p, p)*sc)
 end function qp_inv
@@ -3953,12 +3988,18 @@ elemental logical function qp_is_close(a, b, rel_tol, abs_tol) result(c)
   !! Defaults: rel_tol = sqrt(epsilon), abs_tol = 0
   type(quat_qp), intent(in) :: a, b
   real(real128), intent(in), optional :: rel_tol, abs_tol
-  real(real128) :: rt, at
+  real(real128) :: rt, at, d
   rt = sqrt(epsilon(1._real128))
   if (present(rel_tol)) rt = rel_tol
   at = 0
   if (present(abs_tol)) at = abs_tol
-  c = qp_abs(a - b) <= max(rt*max(qp_abs(a), qp_abs(b)), at)
+  ! Equal infinities are close; an infinite difference never is.
+  if (a == b) then
+    c = .true.
+  else
+    d = qp_abs(a - b)
+    c = d <= huge(d) .and. d <= max(rt*max(qp_abs(a), qp_abs(b)), at)
+  end if
 end function qp_is_close
 
 !-----------------------------------------------------------------------
@@ -4079,23 +4120,27 @@ end function qp_atanh
 ! Complex inverse hyperbolic functions via the C99 identities, because not
 ! every compiler provides them for complex arguments.
 
+elemental complex(real128) function qp_times_i(c) result(r)
+  !! i*c without arithmetic, which would lose the sign of a zero and so the
+  !! side of a branch cut: (0, 1)*(2, 0) gives (+0, 2), not (-0, 2)
+  complex(real128), intent(in) :: c
+  r = cmplx(-aimag(c), real(c), kind=real128)
+end function qp_times_i
+
 elemental complex(real128) function qp_casinh(c) result(r)
   complex(real128), intent(in) :: c
-  complex(real128), parameter :: i = (0, 1)
-  r = -i*asin(i*c)
+  r = -qp_times_i(asin(qp_times_i(c)))
 end function qp_casinh
 
 elemental complex(real128) function qp_cacosh(c) result(r)
   complex(real128), intent(in) :: c
-  complex(real128), parameter :: i = (0, 1)
-  r = i*acos(c)
+  r = qp_times_i(acos(c))
   if (real(r) < 0) r = -r
 end function qp_cacosh
 
 elemental complex(real128) function qp_catanh(c) result(r)
   complex(real128), intent(in) :: c
-  complex(real128), parameter :: i = (0, 1)
-  r = -i*atan(i*c)
+  r = -qp_times_i(atan(qp_times_i(c)))
 end function qp_catanh
 
 elemental function qp_log10(q) result(r)

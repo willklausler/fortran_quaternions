@@ -16,7 +16,7 @@ program test_quaternions
   !! Unit tests for every public procedure, for each kind.
   !! Avoids NaN/Inf arithmetic so it runs under floating-point trapping.
   use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int8, int16, int32, int64
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_positive_inf
   use quaternions
   implicit none
   integer :: ncheck = 0, nfail = 0
@@ -71,7 +71,7 @@ subroutine test_sp()
   real(real32), parameter :: tol = 64*eps, ltol = sqrt(eps)
   type(quat_sp), parameter :: one = quat_sp(1), i = quat_sp(0, 1), j = quat_sp(0, 0, 1), k = quat_sp(0, 0, 0, 1)
   type(quat_sp) :: p, q, r, qs(1000)
-  real(real32) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t
+  real(real32) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t, inf
   complex(real32) :: z
   character(200) :: buf
   integer :: n, u, ios
@@ -184,6 +184,8 @@ subroutine test_sp()
   call check(is_close(p**quat_sp(2), p*p, 4*tol), pre // 'quaternion power')
   big = 4*sqrt(huge(1._real32))
   call check(is_close(inv(quat_sp(big, big)), quat_sp(1/(2*big), -1/(2*big)), tol), pre // 'inverse without overflow')
+  inf = ieee_value(1._real32, ieee_positive_inf)
+  call check(inv(quat_sp(inf, -1)) == quat_sp(0) .and. one/quat_sp(0, 0, -inf) == quat_sp(0), pre // 'inverse of infinity is 0')
 
   ! Comparison --------------------------------------------------------
   call check(quat_sp(1 + eps) /= one .and. .not. (quat_sp(1 + eps) == one), pre // '== is exact')
@@ -191,6 +193,9 @@ subroutine test_sp()
   call check(.not. is_close(one, quat_sp(1.1_real32)), pre // 'is_close rejects')
   call check(is_close(quat_sp(0), quat_sp(1e-3_real32), abs_tol=1e-2_real32), pre // 'is_close abs_tol')
   call check(.not. is_close(quat_sp(0), quat_sp(1e-3_real32), rel_tol=0.5_real32), pre // 'is_close rel_tol near 0')
+  call check(is_close(quat_sp(inf), quat_sp(inf)) .and. .not. is_close(quat_sp(inf), one) .and. .not. is_close(one,&
+      & -quat_sp(inf)), &
+    & pre // 'is_close with infinities')
 
   ! Basic functions ---------------------------------------------------
   p = quat_sp(1, 2, 3, 4)
@@ -228,6 +233,44 @@ subroutine test_sp()
   call check(is_close(r, quat_sp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
   call check(is_close(r, quat_sp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
+  ! On the real axis, including the branch cuts, they match complex (x, +0).
+  do n = -2, 2, 4
+    z = cmplx(n, 0, real32)
+    q = quat_sp(n)
+    r = sqrt(q)
+    call check(is_close(r, quat_sp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex on the real axis')
+    r = exp(q)
+    call check(is_close(r, quat_sp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex on the real axis')
+    r = log(q)
+    call check(is_close(r, quat_sp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex on the real axis')
+    r = sin(q)
+    call check(is_close(r, quat_sp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex on the real axis')
+    r = cos(q)
+    call check(is_close(r, quat_sp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex on the real axis')
+    r = tan(q)
+    call check(is_close(r, quat_sp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex on the real axis')
+    r = asin(q)
+    call check(is_close(r, quat_sp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex on the real axis')
+    r = acos(q)
+    call check(is_close(r, quat_sp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex on the real axis')
+    r = atan(q)
+    call check(is_close(r, quat_sp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex on the real axis')
+    r = sinh(q)
+    call check(is_close(r, quat_sp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex on the real axis')
+    r = cosh(q)
+    call check(is_close(r, quat_sp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex on the real axis')
+    r = tanh(q)
+    call check(is_close(r, quat_sp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex on the real axis')
+  end do
+  ! Closed forms, because nvfortran has no complex asinh, acosh, atanh
+  t = log(2 + sqrt(3._real32))
+  call check(is_close(atanh(quat_sp(2)), quat_sp(log(3._real32)/2, pi/2), tol) &
+    & .and. is_close(atanh(quat_sp(-2)), quat_sp(-log(3._real32)/2, pi/2), tol), pre // 'atanh above the branch cut')
+  call check(is_close(acosh(quat_sp(-2)), quat_sp(t, pi), tol) .and. is_close(acosh(quat_sp(0.5_real32)), quat_sp(0, pi/3), tol), &
+    & pre // 'acosh on the real axis')
+  call check(is_close(asinh(quat_sp(0, 2)), quat_sp(t, pi/2), tol) .and. is_close(asinh(quat_sp(-0._real32, 2)), quat_sp(-t,&
+      & pi/2), tol), &
+    & pre // 'asinh on the branch cut')
   q = quat_sp(0.3_real32, 0.2_real32, -0.4_real32, 0.5_real32)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
@@ -385,7 +428,7 @@ subroutine test_dp()
   real(real64), parameter :: tol = 64*eps, ltol = sqrt(eps)
   type(quat_dp), parameter :: one = quat_dp(1), i = quat_dp(0, 1), j = quat_dp(0, 0, 1), k = quat_dp(0, 0, 0, 1)
   type(quat_dp) :: p, q, r, qs(1000)
-  real(real64) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t
+  real(real64) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t, inf
   complex(real64) :: z
   character(200) :: buf
   integer :: n, u, ios
@@ -498,6 +541,8 @@ subroutine test_dp()
   call check(is_close(p**quat_dp(2), p*p, 4*tol), pre // 'quaternion power')
   big = 4*sqrt(huge(1._real64))
   call check(is_close(inv(quat_dp(big, big)), quat_dp(1/(2*big), -1/(2*big)), tol), pre // 'inverse without overflow')
+  inf = ieee_value(1._real64, ieee_positive_inf)
+  call check(inv(quat_dp(inf, -1)) == quat_dp(0) .and. one/quat_dp(0, 0, -inf) == quat_dp(0), pre // 'inverse of infinity is 0')
 
   ! Comparison --------------------------------------------------------
   call check(quat_dp(1 + eps) /= one .and. .not. (quat_dp(1 + eps) == one), pre // '== is exact')
@@ -505,6 +550,9 @@ subroutine test_dp()
   call check(.not. is_close(one, quat_dp(1.1_real64)), pre // 'is_close rejects')
   call check(is_close(quat_dp(0), quat_dp(1e-3_real64), abs_tol=1e-2_real64), pre // 'is_close abs_tol')
   call check(.not. is_close(quat_dp(0), quat_dp(1e-3_real64), rel_tol=0.5_real64), pre // 'is_close rel_tol near 0')
+  call check(is_close(quat_dp(inf), quat_dp(inf)) .and. .not. is_close(quat_dp(inf), one) .and. .not. is_close(one,&
+      & -quat_dp(inf)), &
+    & pre // 'is_close with infinities')
 
   ! Basic functions ---------------------------------------------------
   p = quat_dp(1, 2, 3, 4)
@@ -542,6 +590,44 @@ subroutine test_dp()
   call check(is_close(r, quat_dp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
   call check(is_close(r, quat_dp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
+  ! On the real axis, including the branch cuts, they match complex (x, +0).
+  do n = -2, 2, 4
+    z = cmplx(n, 0, real64)
+    q = quat_dp(n)
+    r = sqrt(q)
+    call check(is_close(r, quat_dp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex on the real axis')
+    r = exp(q)
+    call check(is_close(r, quat_dp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex on the real axis')
+    r = log(q)
+    call check(is_close(r, quat_dp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex on the real axis')
+    r = sin(q)
+    call check(is_close(r, quat_dp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex on the real axis')
+    r = cos(q)
+    call check(is_close(r, quat_dp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex on the real axis')
+    r = tan(q)
+    call check(is_close(r, quat_dp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex on the real axis')
+    r = asin(q)
+    call check(is_close(r, quat_dp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex on the real axis')
+    r = acos(q)
+    call check(is_close(r, quat_dp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex on the real axis')
+    r = atan(q)
+    call check(is_close(r, quat_dp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex on the real axis')
+    r = sinh(q)
+    call check(is_close(r, quat_dp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex on the real axis')
+    r = cosh(q)
+    call check(is_close(r, quat_dp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex on the real axis')
+    r = tanh(q)
+    call check(is_close(r, quat_dp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex on the real axis')
+  end do
+  ! Closed forms, because nvfortran has no complex asinh, acosh, atanh
+  t = log(2 + sqrt(3._real64))
+  call check(is_close(atanh(quat_dp(2)), quat_dp(log(3._real64)/2, pi/2), tol) &
+    & .and. is_close(atanh(quat_dp(-2)), quat_dp(-log(3._real64)/2, pi/2), tol), pre // 'atanh above the branch cut')
+  call check(is_close(acosh(quat_dp(-2)), quat_dp(t, pi), tol) .and. is_close(acosh(quat_dp(0.5_real64)), quat_dp(0, pi/3), tol), &
+    & pre // 'acosh on the real axis')
+  call check(is_close(asinh(quat_dp(0, 2)), quat_dp(t, pi/2), tol) .and. is_close(asinh(quat_dp(-0._real64, 2)), quat_dp(-t,&
+      & pi/2), tol), &
+    & pre // 'asinh on the branch cut')
   q = quat_dp(0.3_real64, 0.2_real64, -0.4_real64, 0.5_real64)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')
@@ -699,7 +785,7 @@ subroutine test_qp()
   real(real128), parameter :: tol = 64*eps, ltol = sqrt(eps)
   type(quat_qp), parameter :: one = quat_qp(1), i = quat_qp(0, 1), j = quat_qp(0, 0, 1), k = quat_qp(0, 0, 0, 1)
   type(quat_qp) :: p, q, r, qs(1000)
-  real(real128) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t
+  real(real128) :: v(3), axis(3), angle, m(3,3), yaw, pitch, roll, big, t, inf
   complex(real128) :: z
   character(200) :: buf
   integer :: n, u, ios
@@ -813,6 +899,8 @@ subroutine test_qp()
   call check(is_close(p**quat_qp(2), p*p, 4*tol), pre // 'quaternion power')
   big = 4*sqrt(huge(1._real128))
   call check(is_close(inv(quat_qp(big, big)), quat_qp(1/(2*big), -1/(2*big)), tol), pre // 'inverse without overflow')
+  inf = ieee_value(1._real128, ieee_positive_inf)
+  call check(inv(quat_qp(inf, -1)) == quat_qp(0) .and. one/quat_qp(0, 0, -inf) == quat_qp(0), pre // 'inverse of infinity is 0')
 
   ! Comparison --------------------------------------------------------
   call check(quat_qp(1 + eps) /= one .and. .not. (quat_qp(1 + eps) == one), pre // '== is exact')
@@ -820,6 +908,9 @@ subroutine test_qp()
   call check(.not. is_close(one, quat_qp(1.1_real128)), pre // 'is_close rejects')
   call check(is_close(quat_qp(0), quat_qp(1e-3_real128), abs_tol=1e-2_real128), pre // 'is_close abs_tol')
   call check(.not. is_close(quat_qp(0), quat_qp(1e-3_real128), rel_tol=0.5_real128), pre // 'is_close rel_tol near 0')
+  call check(is_close(quat_qp(inf), quat_qp(inf)) .and. .not. is_close(quat_qp(inf), one) .and. .not. is_close(one,&
+      & -quat_qp(inf)), &
+    & pre // 'is_close with infinities')
 
   ! Basic functions ---------------------------------------------------
   p = quat_qp(1, 2, 3, 4)
@@ -857,6 +948,44 @@ subroutine test_qp()
   call check(is_close(r, quat_qp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex')
   r = tanh(q)
   call check(is_close(r, quat_qp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex')
+  ! On the real axis, including the branch cuts, they match complex (x, +0).
+  do n = -2, 2, 4
+    z = cmplx(n, 0, real128)
+    q = quat_qp(n)
+    r = sqrt(q)
+    call check(is_close(r, quat_qp(real(sqrt(z)), aimag(sqrt(z))), tol, tol), pre // 'sqrt matches complex on the real axis')
+    r = exp(q)
+    call check(is_close(r, quat_qp(real(exp(z)), aimag(exp(z))), tol, tol), pre // 'exp matches complex on the real axis')
+    r = log(q)
+    call check(is_close(r, quat_qp(real(log(z)), aimag(log(z))), tol, tol), pre // 'log matches complex on the real axis')
+    r = sin(q)
+    call check(is_close(r, quat_qp(real(sin(z)), aimag(sin(z))), tol, tol), pre // 'sin matches complex on the real axis')
+    r = cos(q)
+    call check(is_close(r, quat_qp(real(cos(z)), aimag(cos(z))), tol, tol), pre // 'cos matches complex on the real axis')
+    r = tan(q)
+    call check(is_close(r, quat_qp(real(tan(z)), aimag(tan(z))), tol, tol), pre // 'tan matches complex on the real axis')
+    r = asin(q)
+    call check(is_close(r, quat_qp(real(asin(z)), aimag(asin(z))), tol, tol), pre // 'asin matches complex on the real axis')
+    r = acos(q)
+    call check(is_close(r, quat_qp(real(acos(z)), aimag(acos(z))), tol, tol), pre // 'acos matches complex on the real axis')
+    r = atan(q)
+    call check(is_close(r, quat_qp(real(atan(z)), aimag(atan(z))), tol, tol), pre // 'atan matches complex on the real axis')
+    r = sinh(q)
+    call check(is_close(r, quat_qp(real(sinh(z)), aimag(sinh(z))), tol, tol), pre // 'sinh matches complex on the real axis')
+    r = cosh(q)
+    call check(is_close(r, quat_qp(real(cosh(z)), aimag(cosh(z))), tol, tol), pre // 'cosh matches complex on the real axis')
+    r = tanh(q)
+    call check(is_close(r, quat_qp(real(tanh(z)), aimag(tanh(z))), tol, tol), pre // 'tanh matches complex on the real axis')
+  end do
+  ! Closed forms, because nvfortran has no complex asinh, acosh, atanh
+  t = log(2 + sqrt(3._real128))
+  call check(is_close(atanh(quat_qp(2)), quat_qp(log(3._real128)/2, pi/2), tol) &
+    & .and. is_close(atanh(quat_qp(-2)), quat_qp(-log(3._real128)/2, pi/2), tol), pre // 'atanh above the branch cut')
+  call check(is_close(acosh(quat_qp(-2)), quat_qp(t, pi), tol) .and. is_close(acosh(quat_qp(0.5_real128)), quat_qp(0, pi/3), tol), &
+    & pre // 'acosh on the real axis')
+  call check(is_close(asinh(quat_qp(0, 2)), quat_qp(t, pi/2), tol) .and. is_close(asinh(quat_qp(-0._real128, 2)), quat_qp(-t,&
+      & pi/2), tol), &
+    & pre // 'asinh on the branch cut')
   q = quat_qp(0.3_real128, 0.2_real128, -0.4_real128, 0.5_real128)
   call check(is_close(exp(log(q)), q, tol) .and. is_close(sqrt(q)*sqrt(q), q, tol), pre // 'exp(log), sqrt')
   call check(is_close(sin(q)**2 + cos(q)**2, one, tol), pre // 'sin^2 + cos^2 = 1')

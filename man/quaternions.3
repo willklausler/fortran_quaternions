@@ -56,7 +56,8 @@ Principal branches as for complex arguments; on the real axis the vector
 direction is i.
 .TP
 .BR is_close ( a ", " b " [, " rel_tol "] [, " abs_tol ])
-True if |a\-b| <= max(rel_tol*max(|a|,|b|), abs_tol);
+True if a == b, or if |a\-b| is finite and
+<= max(rel_tol*max(|a|,|b|), abs_tol);
 defaults rel_tol = sqrt(epsilon), abs_tol = 0.
 .TP
 .BR to_string ( q " [, " fmt ])

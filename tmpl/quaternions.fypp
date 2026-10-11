@@ -130,7 +130,7 @@ $:END(g)
   & ('dot_product', 'dot', 'Four-dimensional dot product'), &
   & ('inv', 'inv', 'Inverse conjg(q)/|q|**2'), &
   & ('normalize', 'normalize', 'Unit quaternion q/|q|'), &
-  & ('is_close', 'is_close', 'True if |a-b| <= max(rel_tol*max(|a|,|b|), abs_tol)'), &
+  & ('is_close', 'is_close', 'True if a == b or |a-b| <= max(rel_tol*max(|a|,|b|), abs_tol), with |a-b| finite'), &
   & ('to_string', 'to_string', 'Text "w + xi + yj + zk", each part written with fmt (default "(g0)")'), &
   & ('log10', 'log10', 'Base-10 logarithm'), &
   & ('random_number', 'random_number', 'Each component uniform in [0, 1), like the intrinsic'), &
@@ -513,6 +513,11 @@ elemental function ${s}$_inv(q) result(r)
   ${Q}$ :: r, p
   real(${k}$) :: sc
   sc = max(abs(q%w), abs(q%x), abs(q%y), abs(q%z))
+  if (sc > huge(sc)) then
+    ! Zero with the signs of conjg(q), as 1/z for a complex infinity (C99 Annex G)
+    r = quat_${s}$(sign(0._${k}$, q%w), sign(0._${k}$, -q%x), sign(0._${k}$, -q%y), sign(0._${k}$, -q%z))
+    return
+  end if
   p = q/sc
   r = ${s}$_conjg(p)/(${s}$_dot(p, p)*sc)
 end function ${s}$_inv
@@ -527,12 +532,18 @@ elemental logical function ${s}$_is_close(a, b, rel_tol, abs_tol) result(c)
   !! Defaults: rel_tol = sqrt(epsilon), abs_tol = 0
   ${Q}$, intent(in) :: a, b
   real(${k}$), intent(in), optional :: rel_tol, abs_tol
-  real(${k}$) :: rt, at
+  real(${k}$) :: rt, at, d
   rt = sqrt(epsilon(1._${k}$))
   if (present(rel_tol)) rt = rel_tol
   at = 0
   if (present(abs_tol)) at = abs_tol
-  c = ${s}$_abs(a - b) <= max(rt*max(${s}$_abs(a), ${s}$_abs(b)), at)
+  ! Equal infinities are close; an infinite difference never is.
+  if (a == b) then
+    c = .true.
+  else
+    d = ${s}$_abs(a - b)
+    c = d <= huge(d) .and. d <= max(rt*max(${s}$_abs(a), ${s}$_abs(b)), at)
+  end if
 end function ${s}$_is_close
 
 !-----------------------------------------------------------------------
@@ -575,23 +586,27 @@ end function ${s}$_${f}$
 ! Complex inverse hyperbolic functions via the C99 identities, because not
 ! every compiler provides them for complex arguments.
 
+elemental complex(${k}$) function ${s}$_times_i(c) result(r)
+  !! i*c without arithmetic, which would lose the sign of a zero and so the
+  !! side of a branch cut: (0, 1)*(2, 0) gives (+0, 2), not (-0, 2)
+  complex(${k}$), intent(in) :: c
+  r = cmplx(-aimag(c), real(c), kind=${k}$)
+end function ${s}$_times_i
+
 elemental complex(${k}$) function ${s}$_casinh(c) result(r)
   complex(${k}$), intent(in) :: c
-  complex(${k}$), parameter :: i = (0, 1)
-  r = -i*asin(i*c)
+  r = -${s}$_times_i(asin(${s}$_times_i(c)))
 end function ${s}$_casinh
 
 elemental complex(${k}$) function ${s}$_cacosh(c) result(r)
   complex(${k}$), intent(in) :: c
-  complex(${k}$), parameter :: i = (0, 1)
-  r = i*acos(c)
+  r = ${s}$_times_i(acos(c))
   if (real(r) < 0) r = -r
 end function ${s}$_cacosh
 
 elemental complex(${k}$) function ${s}$_catanh(c) result(r)
   complex(${k}$), intent(in) :: c
-  complex(${k}$), parameter :: i = (0, 1)
-  r = -i*atan(i*c)
+  r = -${s}$_times_i(atan(${s}$_times_i(c)))
 end function ${s}$_catanh
 
 elemental function ${s}$_log10(q) result(r)

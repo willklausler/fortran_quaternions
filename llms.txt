@@ -56,9 +56,9 @@ E = elemental. Kind of the result = kind of the argument.
 | `real(q)` E | real: w |
 | `aimag(q)` | real(3): [x, y, z] (not elemental) |
 | `dot_product(a, b)` E | real: aw*bw + ax*bx + ay*by + az*bz |
-| `inv(q)` E | conjg(q)/abs(q)**2, scaled to avoid overflow |
+| `inv(q)` E | conjg(q)/abs(q)**2, scaled to avoid overflow; 0 if a component is infinite, like complex |
 | `normalize(q)` E | q/abs(q) |
-| `is_close(a, b [, rel_tol] [, abs_tol])` E | logical: abs(a-b) <= max(rel_tol*max(abs(a),abs(b)), abs_tol); defaults rel_tol = sqrt(epsilon), abs_tol = 0 |
+| `is_close(a, b [, rel_tol] [, abs_tol])` E | logical: a == b, or abs(a-b) finite and <= max(rel_tol*max(abs(a),abs(b)), abs_tol); defaults rel_tol = sqrt(epsilon), abs_tol = 0. Equal infinities are close; an infinity is not close to a finite value |
 | `sqrt exp log log10` E | principal branch, like complex |
 | `sin cos tan asin acos atan` E | like complex |
 | `sinh cosh tanh asinh acosh atanh` E | like complex |
